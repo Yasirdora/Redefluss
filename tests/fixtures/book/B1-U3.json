@@ -1,0 +1,21 @@
+{
+  "book": "Example Textbook B1 (invented for the tests)",
+  "unit": "B1-U3",
+  "title": "Einen Termin vereinbaren",
+  "theme": "Making and moving appointments by phone and email",
+  "position": 3,
+  "pages": {"kursbuch": [12, 13], "uebungsbuch": [52, 53]},
+  "targets": ["konj2_polite", "polite_indirect_question", "refl_required", "refl_case"],
+  "sections": [
+    {"id": "p12-1a", "type": "prediction", "input": "calendar_page", "skill": "speaking"},
+    {"id": "p12-1b", "type": "listening_gist", "audio": ["track_3"]},
+    {"id": "p13-2", "type": "role_play", "cards": 2},
+    {"id": "p52-Ü1", "type": "matching", "items": 6, "key": "derived"},
+    {"id": "p53-Ü3", "type": "binary_choice", "items": 7, "construct": "refl_case", "key": "derived"}
+  ],
+  "keys": {
+    "p52-Ü1": {"answers": ["c", "a", "f", "b", "e", "d"]},
+    "p53-Ü3": {"answers": ["mich", "mir", "mich", "mir", "mich", "mir", "mich"]}
+  },
+  "key_status": "Invented test data. Keys marked 'derived' were worked out by hand, not taken from a publisher."
+}

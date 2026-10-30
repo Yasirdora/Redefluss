@@ -1,0 +1,18 @@
+# Everything about a learner stays on their computer.
+data/private/
+*.db
+*.db-journal
+anki/
+
+# Copyrighted or third-party material: load your own copy (see README).
+data/book/
+data/frequency/
+*.pdf
+
+# Notes and model reviews from development.
+review/
+
+# Python and macOS clutter.
+__pycache__/
+*.pyc
+.DS_Store

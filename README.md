@@ -1,0 +1,151 @@
+# Redefluss
+
+*Redefluss* is German for "flow of speech". It is a small engine behind an AI German tutor for adults working from about A2 towards B2: confident speaking and listening first, with an exam such as the Goethe-Zertifikat B2 as a checkpoint.
+
+**The model teaches, code keeps score, tools verify.** Any chat app that speaks the Model Context Protocol (MCP) can be the tutor: Claude Desktop, Claude Code, ChatGPT developer mode, Gemini CLI, Google Antigravity and others. The engine decides what to practise and keeps an honest record of what happened, so the tutor can't flatter you or forget your mistakes.
+
+It runs on the stock macOS Python 3.9, uses only the standard library and has no dependencies. Everything about you stays in one SQLite file on your computer.
+
+## Getting started
+
+```bash
+git clone <repository URL> Redefluss
+cd Redefluss
+python3 -m unittest discover -s tests -t .
+```
+
+Register the server with your AI app. For Claude Code:
+
+```bash
+claude mcp add german-tutor -- python3 /path/to/Redefluss/server.py
+```
+
+For Claude Desktop, add this to `claude_desktop_config.json`:
+
+```json
+{"mcpServers": {"german-tutor": {"command": "python3", "args": ["/path/to/Redefluss/server.py"]}}}
+```
+
+Then say "Let's start learning German." On the first run there is no learner yet, so the tutor starts by interviewing you, the way a new teacher would: what to call you, your first languages, how good your German is now and how you learned it, what you need it for, which exam and when, how much time you have a day, your textbook, whether you have a human teacher, and du or Sie. It saves your answers with `save_profile`; no lesson starts before that. In the first week it asks you to do one full mock of your exam, so the plan starts from measured scores rather than a guess.
+
+The database is created at `data/private/tutor.db` (or wherever `GERMAN_TUTOR_DB` points). Every app you connect reads and writes the same file. Only one session can be open at a time, so close a session in one app before starting another.
+
+Some apps don't pass a server's instructions to the model. For Google Antigravity, write them as an always-on workspace rule:
+
+```bash
+python3 scripts/export_rules.py --out /path/to/workspace/.agents/rules/german-tutor.md
+```
+
+### Optional: a word-frequency list
+
+With a frequency list, word checks can also test common words a task doesn't need. Without one, only words marked as needed are tested. The OpenSubtitles list (CC BY-SA 4.0, from [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)) suits spoken German:
+
+```bash
+mkdir -p data/frequency
+curl -L -o data/frequency/de_50k.txt https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/de/de_50k.txt
+python3 scripts/import_frequency.py data/frequency/de_50k.txt
+```
+
+### Optional: your textbook
+
+Units of the textbook you work through go in `data/book/`, one JSON file per unit: its pages, sections, target constructs and any answer keys you have. `tests/fixtures/book/B1-U3.json` shows the format with invented content. Publishers' books and keys are copyrighted, so `data/book/` is git-ignored: keep your extractions to yourself. Without a book, the tutor asks which page you're on and works from a photo.
+
+## How it teaches
+
+- **You always try first.** Hints come in steps: the category, then where, then part of the answer.
+- **Corrections are prompts.** The tutor points at an error and you fix it, then say the whole sentence again. It gives the right form only when the prompt fails or the rule is new to you. At most two corrections per task, and none while you're speaking for fluency.
+- **It asks why, like a teacher in class.** Where does the text say so? Which word decided this form? Why this word and not another? A right answer you can't explain counts as a guess, not as knowledge. When you're confused, it asks what you think, finds the step where your reasoning went wrong, and helps with that step only. In discussions it asks "Warum denkst du das?" and "Hast du ein Beispiel?", as the exam does.
+- **Speaking repeats a task three times:** free, then after fixing up to two errors and learning three new expressions, then timed with a twist. The next day those expressions come back in a new situation.
+- **A human teacher, if you have one, tests what carries over.** Once a week `human_brief` gives them stored speech to rate without dates, the AI's latest corrections to check, and a sentence-repetition test.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `learner_summary` | Profile, day count and next exam gate, today's focus, every construct's level, last session; on the first run, the interview questions |
+| `save_profile` | Saves the first-run interview, or a later change |
+| `start_session` | Plans the day from the learner model; at least 15 minutes, and refuses before the interview or while another session is open |
+| `next_activity` | The next block: type, minutes, target constructs, how to teach it, the learner's own error sentences with their triggers, retests due, and whether a break is due |
+| `log_attempt` | One judged answer for one construct, with channel, repair, certainty and the trigger word; updates mastery, records error patterns and retests, and returns signals |
+| `close_session` | Refuses until every judged answer is logged, then writes the summary, including planned targets that were never tested and errors logged as slips |
+| `get_lesson` | A book unit by id or page, with answer keys and their verification status |
+| `log_measure` | Mock-exam modules (with who rated them), C-test, onSET, LexTALE, fluency, pronunciation, human ratings of stored samples, sentence repetition, and a human's audit of the tutor's corrections |
+| `log_sample` | Stores the learner's own speech transcripts and writing, uncorrected, for re-scoring and rating later |
+| `set_unit_status` | Marks a book unit new, in progress or done |
+| `word_check` | Takes up to 15 candidate words, skips known ones, and returns multiple-choice items it scores itself, plus words only to gloss |
+| `answer_word_check` | Scores the learner's letters, records the evidence, and says which words to teach and which to gloss |
+| `show_words` | Records words given to the learner, such as in a planning step, so using them that day doesn't count |
+| `log_word` | One observation about a word: meaning asked about, missed in audio, wrong article, or used without help |
+| `export_anki` | Writes the words waiting for Anki to a tab-separated file to import, at most 5 new a day |
+| `human_brief` | A brief for the weekly human lesson: what to listen for, what to steer towards, stored speech to rate blind, the tutor's latest corrections to audit, and a sentence-repetition test when one is due |
+| `speak` | Reads German aloud with macOS `say`, for drills where the content matters more than the voice, such as numbers and times |
+
+## Rules the code enforces
+
+- **Mastery needs first-time, unassisted evidence from more than one session.**
+  - A rung counts when the last 8 answers in that context include at least 5 from at least 2 sessions, and at least 80% of them were right the first time.
+  - Hinted answers, guesses the learner couldn't explain, and answers the tutor was unsure about are kept but don't count.
+  - A self-repair counts as known for recognise, recall and controlled use, but not for free use.
+  - Free use only counts when it is unprimed: not after drilling the same construct earlier in that session.
+  - Free use (level 4) needs at least one judge besides the tutor model: a checker, the examiner or a human. On tutor scoring alone, the level stops at 3 with a note.
+  - Level 5 needs unprimed free use, judged by someone other than the tutor model, 7 or more days after the first.
+- **Focus.**
+  - Word order follows the order learners acquire it: verb bracket, then verb second, then verb last in subordinate clauses.
+    - The earliest stage below free use that has failed is the target, and earlier stages that haven't failed are probed.
+    - If the next stage fails too, it is drilled with the target as one contrast straight away: the stages say what to work on first, not what must wait. A stage two steps on waits.
+    - Drills are untimed and accuracy-first until the construct reaches controlled use (level 3). Only then do the 3-second timed repetitions start.
+  - One form target and one listening target are ranked by failure rate over 14 days, smoothed as (failures + 1) / (answers + 2), times impact and B2 relevance. Unprimed free use decides the rate once there are 3 such answers. An answer that needed a hint counts as a failure here.
+  - A construct with fewer than 3 answers is probed, not drilled. One-off slips are logged but never drilled.
+- **Mistakes are counted as patterns.**
+  - An error on a word-order or form construct needs its trigger: the word that set the rule off (deswegen for verb-second, weil for verb-last, mit for case, the noun for an article). The same construct and trigger make one pattern.
+  - A pattern comes back as a retest in the next session's review block: a fresh prompt with the same trigger, in the channel it went wrong in. A retest passed without a hint, unsure scoring or same-day drilling schedules the next one 4 days later; passing that resolves the pattern. Another error resets it.
+  - At most 6 retests a session, one per construct, so one doesn't prime the next. Patterns that recur over several days come first.
+  - Focus targets show failure rates per channel and per trigger. The speaking block pulls the construct failing most in speech, which written drills don't fix.
+  - A listening miss is classified as speed (caught on one audio-only replay), decoding (clear in print), knowledge (unclear in print too), retention or unsure. A reading miss is word, sentence, task or unsure; every reading answer, right or wrong, is backed by the words in the text that decide it.
+- **Words have four facets:** meaning, hearing (recognised in speech), gender and use.
+  - A facet is known after unprimed evidence on 2 different days since its last miss. A word shown, glossed or corrected earlier in a session counts as primed for the rest of it.
+  - The tutor model may record misses and uses, but never that a meaning is known: understanding a text doesn't prove each word.
+  - A word check tests up to 6 words by multiple choice with a "weiß nicht" option, plus the gender of each noun not yet known. The engine holds the key and scores the letters. Gender only counts when the meaning was right.
+  - It tests words the task needs, however rare: needed common words first, then the other needed words, then common words the task doesn't need (within the top 10,000 of the frequency list). Other words are only glossed. A subtitle list ranks work words like Bewerbung low, so marking a word as needed is what counts.
+  - At most 2 missed words are taught on the spot; the rest are glossed. A missed word goes to Anki if the task needed it, it is common, or it was missed on 2 days, with at most 5 new cards a day. Anki keeps the review schedule.
+  - No word check before listening or exam-format practice: a topic preview comes before listening, and unknown words are collected afterwards.
+- **The day:** review 20, book lesson 30, speaking 50, input 40, focus drills 20, a real conversation away from the desk 15, close 5 minutes, scaled to the session length.
+  - A session is at least 15 minutes. Under 45 minutes the plan is only review, speaking and the close, so a 20-minute minimum day still counts.
+  - Anki reviews go first, ideally in the morning; new words go later in the day, since sleep after learning helps them stick.
+- **Input rotation:** by day number, 1 reading day and 1 exam-format listening day a week, and narrow listening on the other days. Reading gets a second day while it is the weakest of at least two rated mock modules. Listening ends by listening again while reading the transcript and writing down a short stretch word for word. A 5-minute numbers, times and dates drill opens the block until that construct reaches level 3.
+- **Checks fall due:** a C-test (or onSET) every 30 days and a sentence-repetition test every 14; `learner_summary` lists the ones due. The sentence-repetition test has two forms of 12 sentences in `data/measures/`.
+- **Exam gates** at days 90, 120 and 140 compare mock-exam scores with the pass mark plus a buffer. Only mocks rated by an answer key or a human count.
+- **Breaks:** a 5-minute break after 50 minutes of work, a stop when the planned minutes and their breaks are used up (195 for a full day), and an effort check when hint use rises within a block.
+- **Rebalancing:** up to 10 minutes move from the strongest mock-exam module's block to the weakest's, and speaking never gives minutes away.
+- **Every session records the engine version,** so data logged under different rules can be told apart. Opening an older database upgrades it in place: missing tables and columns are added, and nothing is deleted.
+
+The thresholds are judgments, marked [J] in the code; the constants at the top of `german_tutor/engine.py` hold them. The design was revised several times after critiques by other AI models and research on how adults learn languages: task repetition, prompts rather than recasts, spaced retrieval, self-explanation, and human ratings as the check on the AI.
+
+## Layout
+
+```
+german_tutor/   db.py (schema), catalog.py (constructs, day plan, gates), engine.py, mcp_server.py
+server.py       starts the MCP server
+data/measures/  the sentence-repetition test, two forms of 12 sentences
+data/book/      your textbook units, one JSON file per unit (git-ignored)
+data/frequency/ an optional frequency list (git-ignored)
+data/private/   tutor.db, Anki exports (git-ignored)
+scripts/        init_db.py, import_frequency.py, export_rules.py
+tests/          engine and MCP protocol tests, with an invented book unit in fixtures/
+```
+
+`scripts/init_db.py` sets up a database by hand: it loads the catalog and book units, a profile from `data/private/profile.json` if there is one (see `data/profile.example.json`), and past sessions saved as JSON. You don't need it for a normal start: the server does the same on its own, and the interview replaces the profile file.
+
+## Not built yet
+
+- Reading Anki's review history (read-only), so a word Anki has settled isn't checked again.
+- `check_german`: LanguageTool plus verb-position rules, as a second judge for typed free use.
+- A noun lexicon (gender and plural from Wiktionary) so the engine, not the model, holds der/die/das.
+- The speech pipeline: speech recognition, fluency metrics and pronunciation scoring. The learner's own transcript of their recording comes first.
+- An independent examiner model, used only once 20 or more stored samples have human ratings, with its agreement with the human reported.
+
+The MCP layer is written without the SDK because the SDK needs Python 3.10 or newer. With a newer Python, swapping in the official `mcp` package only replaces `mcp_server.py`.
+
+## Third-party data
+
+The sentence-repetition forms in `data/measures/` and the test unit in `tests/fixtures/` are original. Data you load yourself, such as a frequency list or a textbook, keeps its own licence and stays out of the repository.

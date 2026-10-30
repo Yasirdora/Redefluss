@@ -1,0 +1,47 @@
+{
+ "name": "Sentence repetition (elicited imitation)",
+ "why": "Repeating a sentence you hear only works when your grammar can rebuild it: memory alone fails past about seven words. Scores track general speaking proficiency well (Yan et al. 2016; Kostromitina & Plonsky 2022). These sentences are our own [J], not a published test, so a score means something only next to earlier scores on the same form.",
+ "every_days": 14,
+ "protocol": [
+  "The learner doesn't see the sentences. Record the session if you can.",
+  "Read each sentence once, at normal conversational speed. Don't repeat it and don't slow down.",
+  "Wait about three seconds (count silently), then nod: the learner repeats the sentence as exactly as they can.",
+  "Don't correct or comment until all twelve are done."
+ ],
+ "scoring": {
+  "2": "Every word and every form right; a small pronunciation slip is fine.",
+  "1": "The meaning is kept, but a word or an ending is changed or missing.",
+  "0": "The meaning is lost, or the sentence is unfinished or only partly attempted."
+ },
+ "note": "Also note any sentence where the target structure (the word order or form named with it) came out wrong, and log those as errors afterwards with log_attempt (scorer human, context controlled).",
+ "forms": {
+  "A": [
+   {"n": 1, "text": "Ich habe heute keine Zeit.", "target": "kein before nouns"},
+   {"n": 2, "text": "Morgen rufe ich den Kunden an.", "target": "verb second, separable verb"},
+   {"n": 3, "text": "Deswegen habe ich gestern nicht angerufen.", "target": "verb second, Perfekt"},
+   {"n": 4, "text": "Ich weiß nicht, ob der Termin am Montag stattfindet.", "target": "verb last after ob"},
+   {"n": 5, "text": "Nach der Arbeit gehe ich mit meiner Kollegin einkaufen.", "target": "verb second, dative after mit"},
+   {"n": 6, "text": "Wir brauchen keinen neuen Drucker, weil der alte noch funktioniert.", "target": "kein with an adjective, verb last after weil"},
+   {"n": 7, "text": "Ich möchte wissen, wann das Vorstellungsgespräch beginnt.", "target": "indirect question"},
+   {"n": 8, "text": "Seit zwei Jahren arbeitet sie in einer kleinen Firma in der Stadt.", "target": "seit + dative, adjective ending"},
+   {"n": 9, "text": "Wenn ich mehr Erfahrung hätte, würde ich mich bei dieser Firma bewerben.", "target": "Konjunktiv II, reflexive verb"},
+   {"n": 10, "text": "Gestern hat mir mein Chef erklärt, dass wir das Projekt bis Freitag abschließen müssen.", "target": "verb last after dass, two verbs at the end"},
+   {"n": 11, "text": "Obwohl ich mich gut vorbereitet hatte, habe ich die Frage des Kunden nicht verstanden.", "target": "verb first after a fronted clause"},
+   {"n": 12, "text": "Die Kollegin, mit der ich am Telefon gesprochen habe, schickt mir morgen die Unterlagen.", "target": "relative clause with a preposition"}
+  ],
+  "B": [
+   {"n": 1, "text": "Er hat heute keinen Hunger.", "target": "kein before nouns"},
+   {"n": 2, "text": "Später holt sie die Kinder ab.", "target": "verb second, separable verb"},
+   {"n": 3, "text": "Trotzdem hat er die Stelle nicht bekommen.", "target": "verb second, Perfekt"},
+   {"n": 4, "text": "Ich frage mich, ob die Besprechung heute ausfällt.", "target": "verb last after ob"},
+   {"n": 5, "text": "Am Wochenende fahre ich mit meinem Bruder nach Köln.", "target": "verb second, dative after mit"},
+   {"n": 6, "text": "Sie kauft kein neues Auto, weil das alte noch gut läuft.", "target": "kein with an adjective, verb last after weil"},
+   {"n": 7, "text": "Er hat mir nicht erklärt, wie dieses Formular funktioniert.", "target": "indirect question"},
+   {"n": 8, "text": "Seit zwei Monaten arbeitet er in einem großen Lager am Hafen.", "target": "seit + dative, adjective ending"},
+   {"n": 9, "text": "Wenn ich mehr Zeit hätte, würde ich mich öfter mit meinen Nachbarn treffen.", "target": "Konjunktiv II, reflexive verb"},
+   {"n": 10, "text": "Heute Morgen hat mir die Teamleiterin gesagt, dass wir die Präsentation verschieben müssen.", "target": "verb last after dass, two verbs at the end"},
+   {"n": 11, "text": "Obwohl ich den Bus verpasst hatte, bin ich pünktlich zum Termin gekommen.", "target": "verb first after a fronted clause"},
+   {"n": 12, "text": "Der Mann, mit dem ich gestern telefoniert habe, ruft mich nächste Woche zurück.", "target": "relative clause with a preposition"}
+  ]
+ }
+}
