@@ -21,8 +21,14 @@ And (0.4.0) after two research reviews:
 - The weekly human lesson is the transfer test: human_brief gives blind samples to rate, the tutor's
   recent corrections to audit, and a sentence-repetition test every two weeks.
 
-And (0.5.0), to work for any learner: a first-run interview (save_profile) comes before the first session,
-and the tutor asks for reasons as a teacher does; a right answer without one counts as a guess.
+And (0.5.0), to work for any learner: a first-run interview (save_profile) comes before the first session.
+
+Revised (0.6.0) after reviews of teacher-style questioning: the tutor asks for reasons on a sample, not
+after every answer, and logs what it hears as reason. A right form with no reason still counts, since
+explaining a rule and using it are different skills; a reason that contradicts the form makes it a
+guess. On reading and listening items the quoted words are the skill, and a right choice without them
+is a guess. The quote rule fades to exam format in the last three weeks. The interview asks seven
+questions first and the rest over the first sessions.
 
 Every public method returns plain dicts. Refusals raise TutorError with how to fix them.
 """
@@ -45,6 +51,12 @@ CONTEXTS = {"recognise": 1, "recall": 2, "controlled": 3, "free": 4}
 CHANNELS = ("typed", "spoken", "listening")
 SAMPLE_KINDS = ("speech", "writing")
 REPAIRS = ("none", "self", "prompted")
+# The learner's reason for an answer, when the tutor asked for one [J]. A right form with no reason still
+# counts: explaining a rule and using it are different skills (Wylie et al. 2010-2011). A reason that
+# contradicts the form makes it a guess. On comprehension items the quoted words are the skill, so a right
+# choice counts only with words that decide it.
+REASONS = ("supports", "contradicts", "absent", "unclear")
+EVIDENCE_CONSTRUCTS = ("reading_detail", "listening_detail")
 LEVEL_NAMES = {0: "no evidence yet", 1: "recognise", 2: "recall", 3: "controlled use",
                4: "free use", 5: "retained and fluent"}
 
@@ -81,21 +93,30 @@ MIN_SESSION_MIN = 15
 # How often the progress checks between mocks are due [J]: a C-test or onSET monthly, sentence
 # repetition (elicited imitation) every two weeks in the human lesson.
 CHECKS_EVERY_DAYS = {"c_test": 30, "elicited_imitation": 14}
-# First run: what the tutor asks a new learner before the first session. The code uses only start_date
-# and exam_day; the rest tells the tutor model whom it teaches (first languages predict typical errors).
-PROFILE_QUESTIONS = {
+# First run: what the tutor asks a new learner. A short interview first, and the rest over the first
+# sessions when it fits, so teaching starts soon [J]. The code uses only start_date and exam_day (from
+# exam_date); the rest tells the tutor model whom it teaches (first languages predict typical errors).
+FIRST_QUESTIONS = {
     "name": "What should I call you?",
     "first_languages": "Which language or languages did you grow up with?",
-    "other_languages": "Which other languages do you speak, and how well?",
     "level": "How good is your German now (A2, B1, B2…), how did you learn it, and do you have a certificate?",
-    "goal": "What do you need German for: work, study, daily life, an exam?",
-    "exam": "Which exam, if any (Goethe, telc, DTB, TestDaF…)?",
-    "exam_day": "In how many days do you want to be ready? (150 if there is no date yet)",
+    "goal": "What do you need German for (work, study, daily life), and is there an exam (Goethe, telc, DTB…)?",
+    "exam_date": "When is the exam, or by when do you want to be ready? (a date; about 150 days from now if "
+                 "there is none yet)",
     "minutes_per_day": "How many minutes a day can you really study on most days?",
-    "book": "Do you work through a textbook? Which one, and where are you in it?",
-    "human_tutor": "Do you have a human teacher or speaking partner, and how often?",
     "address": "Shall I say du or Sie to you?",
 }
+LATER_QUESTIONS = {
+    "explain_language": "In which language should I explain grammar: German, English or another?",
+    "worries": "Which part worries you most: speaking, listening, writing or reading?",
+    "schedule": "When in the week can you study (days and times)?",
+    "other_languages": "Which other languages do you speak, and how well?",
+    "book": "Do you work through a textbook? Which one, and where are you in it?",
+    "human_tutor": "Do you have a human teacher or speaking partner, and how often?",
+}
+# In the last weeks before the exam, comprehension practice keeps to exam format: the learner quotes the
+# deciding words only for wrong items [J]. The exam never asks for a quote, and quoting doubles the time.
+EVIDENCE_FADE_DAYS = 21
 ADDRESS_FORMS = ("du", "Sie")
 
 # The weekly human lesson [J]: blind ratings of stored speech, and an audit of the tutor model's corrections.
@@ -171,15 +192,18 @@ class Engine:
 
     def save_profile(self, name: str | None = None, first_languages: list | None = None,
                      other_languages: str | None = None, level: str | None = None, goal: str | None = None,
-                     exam: str | None = None, exam_day: int | None = None, minutes_per_day: int | None = None,
-                     book: str | None = None, human_tutor: str | None = None, address: str | None = None,
+                     exam: str | None = None, exam_date: str | None = None, exam_day: int | None = None,
+                     minutes_per_day: int | None = None,
+                     schedule: str | None = None, worries: str | None = None,
+                     explain_language: str | None = None, book: str | None = None,
+                     human_tutor: str | None = None, address: str | None = None,
                      start_date: str | None = None, notes: str | None = None) -> dict:
         """Store what the first-run interview found out (or a later change). Fields left out keep their value;
-        day 1 is today unless start_date says otherwise."""
+        day 1 is today unless start_date says otherwise. An exam_date sets exam_day."""
         given = {k: v for k, v in locals().items() if k != "self" and v is not None}
         if isinstance(given.get("first_languages"), str):
             given["first_languages"] = [given["first_languages"]]
-        if "exam_day" in given and not 1 <= given["exam_day"] <= 1000:
+        if "exam_day" in given and "exam_date" not in given and not 1 <= given["exam_day"] <= 1000:
             raise TutorError("exam_day is the number of days until the learner wants to be ready, 1 to 1000.")
         if "minutes_per_day" in given and given["minutes_per_day"] < MIN_SESSION_MIN:
             raise TutorError(f"minutes_per_day must be at least {MIN_SESSION_MIN}.")
@@ -192,12 +216,28 @@ class Engine:
                 raise TutorError("start_date must be a date like 2026-01-31.") from None
         elif "start_date" not in self.profile():
             given["start_date"] = self.today().isoformat()
+        if "exam_date" in given:
+            if "exam_day" in given:
+                raise TutorError("Send exam_date or exam_day, not both.")
+            start = given.get("start_date") or self.profile()["start_date"]
+            try:
+                given["exam_day"] = (date.fromisoformat(given["exam_date"]) - date.fromisoformat(start)).days + 1
+            except ValueError:
+                raise TutorError("exam_date must be a date like 2026-01-31.") from None
+            if not 1 <= given["exam_day"] <= 1000:
+                raise TutorError("exam_date must be after day 1 and within 1000 days of it.")
         given.setdefault("exam_day", self.profile().get("exam_day", 150))
         self.set_profile(given)
         return {"profile": self.profile(),
-                "next": "Start with start_session(minutes). The first sessions probe each construct before any "
-                        "drill. Within the first week, do one full mock of the target exam (its official model "
-                        "test) and log each module with log_measure, so the plan starts from measured scores."}
+                "next": "Start with start_session(minutes). In this first session, also take a one-minute "
+                        "speaking sample on a familiar topic (store it with log_sample('speech')) and do one "
+                        "exam-style reading item, to show the rule of quoting the words that decide it. If the "
+                        "learner is near the exam's level and has a date, do one full mock of the exam (its "
+                        "official model test) by the end of the first week, over two sittings if needed: it is a "
+                        "baseline, logged per module with log_measure, and never changes the mastery levels. Say "
+                        "that your marks for writing and speaking are only an estimate. The first sessions probe "
+                        "each construct before any drill. Ask the questions under still_to_ask in "
+                        "learner_summary over the first sessions, one when it fits."}
 
     def profile(self) -> dict:
         return {r["key"]: json.loads(r["value"]) for r in self.conn.execute("SELECT key, value FROM profile")}
@@ -242,11 +282,18 @@ class Engine:
         last = self.conn.execute(
             "SELECT id, summary FROM sessions WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
         profile = self.profile()
-        onboarding = {} if "start_date" in profile else {"onboarding": {
-            "ask": PROFILE_QUESTIONS,
-            "how": "There is no learner yet. Before any lesson, have a short conversation: ask these one or two "
-                   "at a time, in German or in a language the learner is comfortable with, then call "
-                   "save_profile with the answers. Say that everything stays on this computer."}}
+        if "start_date" not in profile:
+            onboarding = {"onboarding": {
+                "ask": FIRST_QUESTIONS,
+                "how": "There is no learner yet. Before any lesson, have a short conversation: ask these one or "
+                       "two at a time, in German or in a language the learner is comfortable with, then call "
+                       "save_profile with the answers. Say that everything stays on this computer. The "
+                       "questions under later can wait for the first sessions.",
+                "later": LATER_QUESTIONS}}
+        else:
+            unasked = {k: q for k, q in {**FIRST_QUESTIONS, **LATER_QUESTIONS}.items()
+                       if k not in profile and not (k == "exam_date" and "exam_day" in profile)}
+            onboarding = {"still_to_ask": unasked} if unasked else {}
         return {
             **onboarding,
             "profile": profile,
@@ -408,11 +455,14 @@ class Engine:
                     channel: str = "typed", hint_level: int = 0, repair: str = "none", certain: bool = True,
                     trigger: str | None = None, retest: int | None = None, item: str | None = None,
                     answer: str | None = None, expected: str | None = None, sentence: str | None = None,
-                    correction: str | None = None, cause: str | None = None, scorer: str = "tutor") -> dict:
+                    correction: str | None = None, cause: str | None = None, scorer: str = "tutor",
+                    reason: str | None = None) -> dict:
         """Record one judged answer for one construct, and update its mastery level.
 
         An error on a word-order or form construct needs its trigger, and joins that pattern.
-        With `retest`, the answer is a retest of that pattern.
+        With `retest`, the answer is a retest of that pattern. With `reason`, a right answer the learner
+        justified wrongly (or, on reading and listening items, couldn't back with the words) is a guess:
+        logged, never scored.
         """
         session = self._open_session(session_id)
         c = self._construct(construct)
@@ -425,6 +475,12 @@ class Engine:
             raise TutorError(f"repair must be one of: {', '.join(REPAIRS)}.")
         if not 0 <= hint_level <= 3:
             raise TutorError("hint_level is 0 (none), 1 (category), 2 (location) or 3 (partial answer).")
+        if reason is not None and reason not in REASONS:
+            raise TutorError(f"reason must be one of: {', '.join(REASONS)}.")
+        guess = bool(correct) and (reason == "contradicts" or (construct in EVIDENCE_CONSTRUCTS
+                                                                and reason in ("absent", "contradicts")))
+        if guess:
+            certain = False
         if correct and repair != "none":
             raise TutorError("A repaired answer was not right first time: send correct=false with repair='self' "
                              "or 'prompted'.")
@@ -448,11 +504,12 @@ class Engine:
         with self.conn:
             attempt_id = self.conn.execute(
                 """INSERT INTO attempts (session_id, at, construct_id, item, context, channel, correct, repair,
-                                         certain, primed, hint_level, answer, expected, scorer, trigger, retest_of)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                         certain, primed, hint_level, answer, expected, scorer, trigger, retest_of,
+                                         reason)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (session_id, now, construct, item, context, channel, int(bool(correct)), repair,
                  int(bool(certain)), int(primed), hint_level, answer, expected, scorer, trigger,
-                 pattern["id"] if pattern is not None else None)).lastrowid
+                 pattern["id"] if pattern is not None else None, reason)).lastrowid
             if is_error:
                 pattern_id = self._note_error_pattern(construct, trigger, channel, now) if patterned else None
                 self.conn.execute(
@@ -470,6 +527,17 @@ class Engine:
                   "level_name": LEVEL_NAMES[level]}
         if note:
             result["note"] = note
+        if guess:
+            result["guess"] = ("Right, but the reason contradicts it: logged as a guess, not scored. Teach the "
+                               "contrast (which word decides it) and give one new item on it before the session "
+                               "ends." if reason == "contradicts" else
+                               "Right, but not backed by the words in the text: logged as a guess, not scored.")
+        elif not correct and reason == "supports":
+            result["reason_note"] = (
+                "They found the right place and misread it: hint about that sentence."
+                if construct in EVIDENCE_CONSTRUCTS else
+                "The reason is right but the form isn't: the rule is known and not yet automatic. Practise it "
+                "in new sentences rather than explaining it again.")
         if pattern is not None:
             result["retest"] = retest_result
         signals = self._signals(session)
@@ -519,6 +587,9 @@ class Engine:
             "samples": self.conn.execute("SELECT COUNT(*) FROM samples WHERE session_id = ?",
                                          (session_id,)).fetchone()[0],
             "retests": self._retest_summary(session_id),
+            "reasons": {kind: n for kind, n in self.conn.execute(
+                "SELECT reason, COUNT(*) FROM attempts WHERE session_id = ? AND reason IS NOT NULL GROUP BY reason",
+                (session_id,))},
             "words": self._session_words(session_id),
             "focus_next": {track: (focus[track] or {}).get("id")
                            for track in ("word_order", "form", "listening", "reading", "spoken")},
@@ -1319,9 +1390,12 @@ class Engine:
                 "session, set today's task in a new situation that needs them. "
                 "Round 1: a minute of planning, in which you may give up to 5 expressions the task needs, recorded "
                 "first with show_words (source 'speaking'). Then the learner does the task without interruption. "
-                "Create situations that need these constructs without naming them. In a discussion, ask follow-up "
-                "questions as a teacher would (Warum denkst du das? Wie meinst du das? Hast du ein Beispiel?): "
-                "they are conversation, not correction, and the exam rewards reasons. Only round 1 is free use: log "
+                "Create situations that need these constructs without naming them. In a discussion, let the "
+                "learner's first turn run (about 90 seconds), then ask one follow-up at a time from what the "
+                "exam rewards: a reason (Warum denkst du das?), the other side (Was würde jemand dagegen sagen? "
+                "Und was entgegnest du?), an example (Hast du ein Beispiel?), a summary (Wofür bist du am "
+                "Ende?). It is conversation, not correction. Switch between du and Sie roles now and then: "
+                "register is marked too. Only round 1 is free use: log "
                 "each use or miss after the turn, as free, with its trigger. "
                 "Revision: take at most two errors, from these constructs where possible. For each, prompt rather "
                 "than recast: point at it (where does the verb go after deswegen?) and let the learner fix it, then "
@@ -1340,6 +1414,7 @@ class Engine:
             if len(latest) >= 2 and min(latest, key=latest.get) == "lesen":
                 rotation[EXTRA_READING_DAY] = "reading"
             mode = rotation.get(day % 7, "listening") if day else "listening"
+            exam_weeks = bool(day) and self.profile().get("exam_day", 150) - day < EVIDENCE_FADE_DAYS
             drill_numbers = self._construct("numbers_times")["level"] < 3
             targets = list(dict.fromkeys(
                 ([listening["id"]] if listening and mode != "reading" else [])
@@ -1351,7 +1426,11 @@ class Engine:
                        "fine here because the content is what is drilled. " if drill_numbers else "")
             protocol = ("Before playing, say in one sentence what the recording is about (who, where, why), with no "
                         "word list, and what to listen for: one detail per pass at first, up to three with notes "
-                        "later. Listen once and act on it (write the time, the name, what to bring). For each miss, "
+                        "later. Listen once and act on it (write the time, the name, what to bring). Never ask "
+                        "while the audio plays. After each wrong answer" + (
+                            "" if exam_weeks else " and about one right answer in three") + ", the learner says "
+                        "which words decided it; replay that short stretch once and let them confirm or change it, "
+                        "and log reason (skip this in a timed mock). For each miss, "
                         "replay just that part once, audio only: caught now is speed. Still missed, read the "
                         "transcript: clear in print is decoding, so check whether a reduction caused it (ham wa = "
                         "haben wir, aufm = auf dem), have the learner say the full form back, and log the word with "
@@ -1372,10 +1451,16 @@ class Engine:
                            "scored with its key, with no word check first: this is exam practice. Log each item "
                            "as reading_detail; a miss's cause is word (an unknown word blocked it), sentence (the "
                            "words were known but the sentence was misread), task (the statement or instruction "
-                           "was misunderstood) or unsure. Then go through every answer, right or wrong, as a teacher would: where "
-                           "in the text does it say so (the learner quotes the words) and why does it fit? A right "
-                           "answer the learner can't point to is a guess: log it certain=false. Afterwards, run "
-                           "word_check on the words that blocked "
+                           "was misunderstood) or unsure. " + (
+                               "These are the exam weeks: go through the wrong items only, where the learner quotes "
+                               "the words that decide each one and you log reason, and keep the rest in exam "
+                               "format. " if exam_weeks else
+                               "Then go through every wrong item and about one right item in three: the learner "
+                               "quotes the words in the text that decide it, and you log reason (supports, "
+                               "contradicts, absent). A right choice with the wrong words is a guess; a wrong choice "
+                               "with the right words means they found the place and misread it, so hint about that "
+                               "sentence. Ask one open question about the whole text (Was will der Autor hier "
+                               "sagen?), not one per item. ") + "Afterwards, run word_check on the words that blocked "
                            "the learner and others from the text they may not know, so the useful ones reach Anki.",
             }[mode]
             block.update(title={"listening": "Listening", "exam_listening": "Exam-format listening",

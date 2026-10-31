@@ -26,7 +26,7 @@ For Claude Desktop, add this to `claude_desktop_config.json`:
 {"mcpServers": {"german-tutor": {"command": "python3", "args": ["/path/to/Redefluss/server.py"]}}}
 ```
 
-Then say "Let's start learning German." On the first run there is no learner yet, so the tutor starts by interviewing you, the way a new teacher would: what to call you, your first languages, how good your German is now and how you learned it, what you need it for, which exam and when, how much time you have a day, your textbook, whether you have a human teacher, and du or Sie. It saves your answers with `save_profile`; no lesson starts before that. In the first week it asks you to do one full mock of your exam, so the plan starts from measured scores rather than a guess.
+Then say "Let's start learning German." On the first run there is no learner yet, so the tutor starts with a short interview, the way a new teacher would: what to call you, your first languages, how good your German is now and how you learned it, what you need it for, when your exam is, how much time you have a day, and du or Sie. It saves your answers with `save_profile`; no lesson starts before that. The rest (which language to explain grammar in, what worries you most, when in the week you study, other languages, your textbook, a human teacher) it asks over the first sessions. The first session includes a one-minute speaking sample and one reading item. If you're near your exam's level and have a date, it asks you to do one full mock of the exam in the first week as a baseline; mock scores never change the mastery levels.
 
 The database is created at `data/private/tutor.db` (or wherever `GERMAN_TUTOR_DB` points). Every app you connect reads and writes the same file. Only one session can be open at a time, so close a session in one app before starting another.
 
@@ -54,7 +54,10 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
 
 - **You always try first.** Hints come in steps: the category, then where, then part of the answer.
 - **Corrections are prompts.** The tutor points at an error and you fix it, then say the whole sentence again. It gives the right form only when the prompt fails or the rule is new to you. At most two corrections per task, and none while you're speaking for fluency.
-- **It asks why, like a teacher in class.** Where does the text say so? Which word decided this form? Why this word and not another? A right answer you can't explain counts as a guess, not as knowledge. When you're confused, it asks what you think, finds the step where your reasoning went wrong, and helps with that step only. In discussions it asks "Warum denkst du das?" and "Hast du ein Beispiel?", as the exam does.
+- **It asks why, like a teacher in class, but not after every answer.** After every error, the first time you get something new right, and on about one right answer in four while a rule is still new: "Which word decided this form?" (Welches Wort bestimmt hier die Form?), not a general why, and never a yes/no question. Explaining a rule and using it are different skills, so a right form without an explanation still counts; a right form with an explanation that argues for a different form is logged as a guess. A wrong form with the right explanation means you know the rule but it isn't automatic yet, so you practise instead of hearing it again.
+- **In reading and listening, it asks where.** After a reading text you quote the words that decide each wrong item and about one right item in three; a right answer backed by the wrong words is a guess, and a wrong answer at the right place is a misreading. In listening you name the words that decided it, and the tutor replays that stretch once. In the last three weeks before the exam this shrinks to the wrong items, to keep exam format.
+- **When you're confused, it doesn't lecture.** It asks what you think and what made you think it, names the step that went wrong, helps with that step only, and lets you finish; then you say the rule in one sentence. After two failed prompts it shows the form and has you use it in a new sentence. Rules are explained in the language you chose or as a short German formula (weil … Verb am Ende).
+- **Discussions follow the exam.** It lets your first turn run, then asks one follow-up at a time: a reason (Warum denkst du das?), the other side (Was würde jemand dagegen sagen? Und was entgegnest du?), an example, a summary. It switches between du and Sie roles, since register is marked.
 - **Speaking repeats a task three times:** free, then after fixing up to two errors and learning three new expressions, then timed with a twist. The next day those expressions come back in a new situation.
 - **A human teacher, if you have one, tests what carries over.** Once a week `human_brief` gives them stored speech to rate without dates, the AI's latest corrections to check, and a sentence-repetition test.
 
@@ -62,11 +65,11 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
 
 | Tool | What it does |
 |---|---|
-| `learner_summary` | Profile, day count and next exam gate, today's focus, every construct's level, last session; on the first run, the interview questions |
+| `learner_summary` | Profile, day count and next exam gate, today's focus, every construct's level, last session; on the first run, the interview questions, and later the questions still to ask |
 | `save_profile` | Saves the first-run interview, or a later change |
 | `start_session` | Plans the day from the learner model; at least 15 minutes, and refuses before the interview or while another session is open |
 | `next_activity` | The next block: type, minutes, target constructs, how to teach it, the learner's own error sentences with their triggers, retests due, and whether a break is due |
-| `log_attempt` | One judged answer for one construct, with channel, repair, certainty and the trigger word; updates mastery, records error patterns and retests, and returns signals |
+| `log_attempt` | One judged answer for one construct, with channel, repair, certainty, the trigger word and the learner's reason when asked; updates mastery, records error patterns and retests, and returns signals |
 | `close_session` | Refuses until every judged answer is logged, then writes the summary, including planned targets that were never tested and errors logged as slips |
 | `get_lesson` | A book unit by id or page, with answer keys and their verification status |
 | `log_measure` | Mock-exam modules (with who rated them), C-test, onSET, LexTALE, fluency, pronunciation, human ratings of stored samples, sentence repetition, and a human's audit of the tutor's corrections |

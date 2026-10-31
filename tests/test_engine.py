@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from german_tutor.db import connect
-from german_tutor.engine import PROFILE_QUESTIONS, Engine, TutorError
+from german_tutor.engine import FIRST_QUESTIONS, LATER_QUESTIONS, Engine, TutorError
 
 BOOK = Path(__file__).resolve().parent / "fixtures" / "book"  # an invented unit, not a real textbook
 
@@ -737,14 +737,20 @@ class FirstRunTest(unittest.TestCase):
 
     def test_a_new_learner_is_interviewed_before_any_lesson(self):
         summary = self.engine.learner_summary()
-        self.assertEqual(summary["onboarding"]["ask"], PROFILE_QUESTIONS)
+        self.assertEqual(summary["onboarding"]["ask"], FIRST_QUESTIONS)
+        self.assertEqual(summary["onboarding"]["later"], LATER_QUESTIONS)
         with self.assertRaisesRegex(TutorError, "no learner yet"):
             self.engine.start_session(60)
-        saved = self.engine.save_profile(name="Sam", first_languages="Turkish", level="B1", address="du")
+        saved = self.engine.save_profile(name="Sam", first_languages="Turkish", level="B1", address="du",
+                                         explain_language="English", worries="listening", schedule="evenings")
         self.assertEqual(saved["profile"]["start_date"], "2026-11-05")
         self.assertEqual(saved["profile"]["exam_day"], 150)
         self.assertEqual(saved["profile"]["first_languages"], ["Turkish"])
+        self.assertEqual(saved["profile"]["explain_language"], "English")
+        self.assertIn("speaking sample", saved["next"])
         self.assertNotIn("onboarding", self.engine.learner_summary())
+        self.assertEqual(set(self.engine.learner_summary()["still_to_ask"]),
+                         {"goal", "minutes_per_day", "other_languages", "book", "human_tutor"})
         self.assertEqual(self.engine.learner_summary()["progress"]["day"], 1)
         self.engine.start_session(60)
 
@@ -753,6 +759,15 @@ class FirstRunTest(unittest.TestCase):
         self.clock.advance(days=10)
         profile = self.engine.save_profile(minutes_per_day=90)["profile"]
         self.assertEqual((profile["name"], profile["exam_day"], profile["start_date"]), ("Sam", 120, "2026-11-05"))
+
+    def test_an_exam_date_sets_the_exam_day(self):
+        profile = self.engine.save_profile(name="Sam", exam_date="2027-03-14")["profile"]
+        self.assertEqual(profile["exam_day"], 130)  # 5 Nov to 14 Mar is 129 days: day 130
+        with self.assertRaisesRegex(TutorError, "not both"):
+            self.engine.save_profile(exam_date="2027-03-14", exam_day=100)
+        with self.assertRaisesRegex(TutorError, "after day 1"):
+            self.engine.save_profile(exam_date="2026-10-01")
+        self.assertEqual(self.engine.profile()["exam_day"], 130)
 
     def test_answers_are_checked(self):
         for bad, message in (({"address": "ihr"}, "du or Sie"), ({"exam_day": 0}, "exam_day"),
@@ -767,14 +782,67 @@ class TeachingTextTest(EngineTest):
         return {b["type"]: b for b in (self.engine.next_activity(self.session) for _ in range(7))}
 
     def test_speaking_asks_for_reasons_and_reading_for_the_words_in_the_text(self):
-        self.assertIn("Warum denkst du das?", self.blocks()["speaking"]["instructions"])
+        self.assertIn("Und was entgegnest du?", self.blocks()["speaking"]["instructions"])
         self.engine.close_session(self.session, 0)
         self.clock.advance(days=1)  # day 2: a reading day
         self.session = self.engine.start_session(180)["session_id"]
         reading = self.blocks()["input"]
         self.assertEqual(reading["mode"], "reading")
         self.assertIn("the learner quotes the words", reading["instructions"])
-        self.assertIn("certain=false", reading["instructions"])
+        self.assertIn("A right choice with the wrong words is a guess", reading["instructions"])
+
+    def test_in_the_exam_weeks_only_wrong_items_get_the_quote(self):
+        self.engine.set_profile({"exam_day": 15})
+        self.engine.close_session(self.session, 0)
+        self.clock.advance(days=1)  # day 2 of 15
+        self.session = self.engine.start_session(180)["session_id"]
+        reading = self.blocks()["input"]["instructions"]
+        self.assertIn("These are the exam weeks: go through the wrong items only", reading)
+        self.assertNotIn("one right item in three", reading)
+
+
+class ReasonTest(EngineTest):
+    def stored(self):
+        return self.engine.conn.execute("SELECT certain, reason FROM attempts ORDER BY id DESC LIMIT 1").fetchone()
+
+    def test_a_right_form_with_a_contradicting_reason_is_a_guess(self):
+        result = self.log(reason="contradicts")
+        self.assertIn("guess", result)
+        self.assertEqual(tuple(self.stored()), (0, "contradicts"))
+
+    def test_a_right_form_without_a_reason_still_counts(self):
+        for _ in range(6):
+            self.assertNotIn("guess", self.log(reason="absent"))
+        self.new_session()
+        self.log(reason="unclear")
+        self.assertEqual(self.level(), 3)
+
+    def test_a_right_comprehension_answer_needs_the_words_that_decide_it(self):
+        for reason, guess in (("absent", True), ("contradicts", True), ("supports", False), (None, False)):
+            result = self.log("reading_detail", "free", True, trigger=None, reason=reason)
+            self.assertEqual("guess" in result, guess, reason)
+            self.assertEqual(self.stored()["certain"], int(not guess))
+        self.log("listening_detail", "free", True, trigger=None, channel="listening", reason="absent")
+        self.assertEqual(self.stored()["certain"], 0)
+
+    def test_a_wrong_answer_with_a_right_reason_is_still_an_error_and_calls_for_practice(self):
+        result = self.log(correct=False, reason="supports", sentence="Deswegen ich habe keine Zeit.")
+        self.assertEqual(tuple(self.stored()), (1, "supports"))
+        self.assertIn("Practise it", result["reason_note"])
+        result = self.log("reading_detail", "free", False, trigger=None, reason="supports", cause="sentence")
+        self.assertIn("misread", result["reason_note"])
+
+    def test_reasons_are_checked(self):
+        with self.assertRaisesRegex(TutorError, "reason must be one of"):
+            self.log(reason="maybe")
+
+    def test_the_session_summary_counts_reasons(self):
+        self.log(reason="supports")
+        self.log(reason="supports")
+        self.log(reason="contradicts")
+        self.log()
+        summary = self.engine.close_session(self.session, 4)
+        self.assertEqual(summary["reasons"], {"supports": 2, "contradicts": 1})
 
 
 class MigrationTest(unittest.TestCase):

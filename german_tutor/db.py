@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS attempts (
     expected       TEXT,
     scorer         TEXT NOT NULL DEFAULT 'tutor', -- tutor | code:<checker> | examiner | human
     trigger        TEXT,                         -- lower case, as in patterns
-    retest_of      INTEGER REFERENCES patterns(id)
+    retest_of      INTEGER REFERENCES patterns(id),
+    reason         TEXT                          -- the learner's reason, when asked: supports | contradicts | absent | unclear
 );
 CREATE TABLE IF NOT EXISTS errors (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,6 +156,7 @@ ADDED_COLUMNS = [
     ("attempts", "trigger", "TEXT"),
     ("attempts", "retest_of", "INTEGER REFERENCES patterns(id)"),
     ("errors", "pattern_id", "INTEGER REFERENCES patterns(id)"),
+    ("attempts", "reason", "TEXT"),
 ]
 
 

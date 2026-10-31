@@ -13,17 +13,18 @@ import sys
 import traceback
 
 from . import __version__, catalog
-from .engine import (ARTICLES, CANDIDATES_MAX, CHANNELS, CONTEXTS, REPAIRS, SAMPLE_KINDS, WORD_FACETS, WORD_POS,
+from .engine import (ARTICLES, CANDIDATES_MAX, CHANNELS, CONTEXTS, REASONS, REPAIRS, SAMPLE_KINDS, WORD_FACETS, WORD_POS,
                      Engine, TutorError)
 
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 INSTRUCTIONS = """German tutor engine for one learner. You teach; this server keeps score.
 
-First run: if learner_summary contains onboarding, there is no learner yet. Interview them with its
-questions, one or two at a time, in a language they are comfortable with, and save the answers with
-save_profile before any lesson. Use their first languages to expect typical errors: articles and
-gender when the first language has none, dropped subject pronouns, verb position.
+First run: if learner_summary contains onboarding, there is no learner yet. Interview them with the
+questions under ask, one or two at a time, in a language they are comfortable with, and save the
+answers with save_profile before any lesson; ask the rest over the first sessions (still_to_ask), one
+when it fits. Say that everything stays on this computer. Use their first languages to expect typical
+errors: articles and gender when the first language has none, dropped subject pronouns, verb position.
 
 Workflow: call learner_summary first. Then start_session(minutes) and, for each block, next_activity.
 Log every answer you judge with log_attempt, one call per construct: a sentence with two different
@@ -33,8 +34,7 @@ the number of answers you judged; it refuses to close while any are missing.
 Logging honestly: correct means right the first time, with no help. A form the learner fixed alone
 is correct=false with repair='self'; fixed after your prompt, repair='prompted'. Set channel to what
 actually happened: typed, spoken (a recording or its transcript), or listening. When you are not
-sure the learner got it right (a typo, a slip of the tongue, or a right answer they can't justify),
-send certain=false and say so.
+sure the learner got it right (a typo or a slip of the tongue, say), send certain=false and say so.
 Your own scoring never awards free use (level 4) on its own; a human or a checker has to confirm it.
 An answer is free only if the target form did not appear in your own turns just before it (a model,
 the question, the role-play setup); otherwise log it as controlled. Verdicts are final: if the learner
@@ -65,13 +65,27 @@ Only when the prompt fails, or the construct's level is below 2, model the form 
 in a new sentence. Correct at most two targets per task, the focus targets first; log the rest
 without raising them, and never correct during a fluency round.
 
-Ask why, as a good teacher does. After an answer, right or wrong, ask for the reason: where the text
-says so (the learner quotes the words), which word or rule decided the form, why this word and not
-another. A right answer with no reason or a wrong one is a guess: log it certain=false. When the
-learner is confused, don't explain at once: ask what they think and why, find the step where their
-reasoning goes wrong, give a hint for that step only, and let them finish; then have them say the rule
-in their own words. Never ask why during a fluency round; in a discussion, ask follow-ups as part of
-the conversation (Warum denkst du das? Hast du ein Beispiel?). In speaking tasks, create situations
+Ask why, as a good teacher does, but sparingly. Decide whether the answer is right before you ask,
+and don't let the reason change that verdict. Ask after every error, on the first unhinted success
+with a construct new to the learner, and on about one right answer in four while its level is below
+3; above that, only after a slip. At most one question per item and two per task. Ask for the
+deciding word, not a general why (Welches Wort bestimmt hier die Form? Woran hast du das erkannt?),
+never as a yes/no question or a choice of two; a question that names the rule is a hint, so log its
+hint_level. Log what came back as reason: supports, contradicts, absent (none, I don't know, or the
+answer said again) or unclear. A right form with no reason still counts; a right form with a reason
+that contradicts it is a guess: teach the contrast and give one new item on it before the session
+ends. A wrong form with a right reason means the rule is known but not yet automatic: practise, don't
+explain it again. In reading and listening, the reason is the words that decide the item, and a right
+choice without them is a guess. Don't accept a weak reason because the learner sounds sure, and don't
+cross-examine an unclear one: say what you understood and move on; after two "ich weiß nicht", stop
+asking. When the learner is confused,
+don't explain at once: ask what they think and what made them think it, name the step that goes
+wrong without giving the form, hint that step only, and let them finish; then have them say the rule
+in one sentence. If two prompts fail, model the form and have them use it in a new sentence. Explain
+rules in the profile's explain_language or as a short German formula (weil ... Verb am Ende); quotes,
+discussion and fluency work stay in German. Never ask why during a fluency round or a timed mock.
+
+In speaking tasks, create situations
 that need the target constructs without naming them, do not interrupt, and log after the turn. Clear
 up any misunderstanding of meaning at once. Never write texts for the learner. Never state the
 learner's level yourself; report what the engine returns. Mark book exercises only against keys from
@@ -123,9 +137,15 @@ TOOLS = [
            "other_languages": {"type": "string", "description": "Other languages and how well, e.g. 'English C1'."},
            "level": {"type": "string", "description": "Their own estimate, how they learned, any certificate."},
            "goal": {"type": "string"}, "exam": {"type": "string", "description": "e.g. Goethe-Zertifikat B2."},
+           "exam_date": {"type": "string", "description": "The exam, or when they want to be ready, as "
+                                                        "YYYY-MM-DD; sets exam_day."},
            "exam_day": {"type": "integer", "minimum": 1, "maximum": 1000,
-                        "description": "Days from day 1 until they want to be ready; default 150."},
+                        "description": "Instead of exam_date: the day number they want to be ready by, counting "
+                                       "day 1 as 1; default 150."},
            "minutes_per_day": {"type": "integer", "minimum": 15},
+           "schedule": {"type": "string", "description": "When in the week they can study."},
+           "worries": {"type": "string", "description": "The part of the exam or of real life that worries them most."},
+           "explain_language": {"type": "string", "description": "The language for explaining grammar."},
            "book": {"type": "string", "description": "Textbook and where they are in it."},
            "human_tutor": {"type": "string", "description": "A human teacher or partner, and how often."},
            "address": {"type": "string", "enum": ["du", "Sie"]},
@@ -153,9 +173,16 @@ TOOLS = [
            "repair": {"type": "string", "enum": list(REPAIRS),
                       "description": "self: the learner fixed it alone; prompted: fixed after you pointed at it. "
                                      "Send correct=false with either."},
-           "certain": {"type": "boolean", "description": "false when you are not sure how to judge it, or the learner "
-                                                         "got it right but couldn't say why; the answer is kept "
-                                                         "but not scored. Default true."},
+           "certain": {"type": "boolean", "description": "false when you are not sure how to judge it (a typo, a slip "
+                                                         "of the tongue); the answer is kept but not scored. "
+                                                         "Default true."},
+           "reason": {"type": "string", "enum": list(REASONS),
+                      "description": "Only when you asked for the reason. supports: it fits the answer; contradicts: "
+                                     "it argues for another form; absent: none, 'I don't know', or the answer said "
+                                     "again; unclear. For "
+                                     "reading_detail and listening_detail, the reason is the words quoted from the "
+                                     "text. A right answer with a contradicting reason, or a comprehension answer "
+                                     "without the deciding words, is logged as a guess and not scored."},
            "trigger": {"type": "string", "description": "The word that set the rule off: deswegen (verb second), "
                                                         "weil (verb last), mit (case), the noun for an article or "
                                                         "ending, the verb for a verb form. Required for word-order "
