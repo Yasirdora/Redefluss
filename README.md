@@ -4,7 +4,9 @@
 
 **The model teaches, code keeps score, tools verify.** Any chat app that speaks the Model Context Protocol (MCP) can be the tutor: Claude Desktop, Claude Code, ChatGPT developer mode, Gemini CLI, Google Antigravity and others. The engine decides what to practise and keeps an honest record of what happened, so the tutor can't flatter you or forget your mistakes.
 
-It runs on the stock macOS Python 3.9, uses only the standard library and has no dependencies. Everything about you stays in one SQLite file on your computer.
+It runs on the stock macOS Python 3.9, uses only the standard library and has no dependencies. Your learner record stays in one SQLite file on your computer; the lessons themselves go through the AI app you connect, and so to its provider.
+
+> **Disclaimer.** Redefluss is unofficial and experimental, and not affiliated with the Goethe-Institut or any exam provider. AI feedback can be wrong, its marks are estimates, and nothing here guarantees an exam result. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Getting started
 
