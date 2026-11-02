@@ -287,7 +287,8 @@ class Engine:
                 "ask": FIRST_QUESTIONS,
                 "how": "There is no learner yet. Before any lesson, have a short conversation: ask these one or "
                        "two at a time, in German or in a language the learner is comfortable with, then call "
-                       "save_profile with the answers. Say that everything stays on this computer. The "
+                       "save_profile with the answers. Say that their record stays in a file on this computer, while what they say in lessons goes "
+                       "to this AI app's provider. The "
                        "questions under later can wait for the first sessions.",
                 "later": LATER_QUESTIONS}}
         else:
