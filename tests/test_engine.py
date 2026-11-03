@@ -864,6 +864,10 @@ class ExamTest(EngineTest):
             if block["type"] == kind:
                 return block
 
+    def instructions_on(self, exam, day):
+        self.take(exam, day=day)
+        return self.instructions("writing")
+
     def test_the_exam_is_read_from_the_learners_own_words(self):
         for words, exam in (("telc B2", "telc_b2"), ("the DTB after my BAMF course", "dtb_b2"),
                             ("Goethe-Zertifikat B2", "goethe_b2"), ("telc B1·B2 Beruf", "general_b2"),
@@ -908,6 +912,35 @@ class ExamTest(EngineTest):
         listening = self.instructions("input")["instructions"]
         self.assertIn("every text is heard only once", listening)
         self.assertNotIn("Goethe", listening)
+
+    def test_writing_twice_a_week_takes_the_focus_block_and_some_speaking(self):
+        started = self.take("telc", day=4)
+        blocks = self.blocks(started)
+        self.assertEqual(blocks["writing"], 40)  # 30 minutes as in the exam, 10 for feedback
+        self.assertNotIn("focus", blocks)
+        self.assertEqual(blocks["speaking"], 30)
+        self.assertEqual(sum(blocks.values()), 180)
+        writing = self.instructions("writing")
+        self.assertIn("Aufgabe A", writing["task"])
+        self.assertIn("log_sample('writing') before any feedback", writing["instructions"])
+        self.assertIn("log_measure('writing_task', score, 45", writing["instructions"])
+        self.assertIn("Aufgabe B", self.instructions_on("telc", 7)["task"])
+        self.assertNotIn("writing", self.blocks(self.take("telc", day=5)))
+
+    def test_a_long_task_gives_way_to_a_shorter_one_on_a_short_day(self):
+        self.assertIn("Teil 1", self.instructions_on("Goethe B2", 4)["task"])  # 50 minutes fits 180
+        self.assertEqual(self.blocks(self.take("Goethe B2", minutes=120, day=11))["writing"], 35)  # Teil 2
+        self.assertNotIn("writing", self.blocks(self.take("Goethe B2", minutes=30, day=18)))
+
+    def test_one_speaking_part_and_sprachbausteine_come_once_a_week(self):
+        self.take("telc", day=3)
+        speaking = self.instructions("speaking")
+        self.assertIn("Teil 1", speaking["exam_part"])
+        self.assertIn("Exam format today (telc Deutsch B2)", speaking["instructions"])
+        self.take("telc", day=5)
+        self.assertIn("Sprachbausteine", self.instructions("focus")["instructions"])
+        self.take("Goethe B2", day=12)
+        self.assertNotIn("Sprachbausteine", self.instructions("focus")["instructions"])
 
     def test_the_weakest_part_gets_its_minutes_in_its_own_block(self):
         self.engine.set_profile({"exam": "telc"})

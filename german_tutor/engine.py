@@ -79,6 +79,16 @@ BREAK_AFTER_MIN = 50
 BREAK_MIN = 5
 HINT_WINDOW = 8
 HINT_RISE_PCT = 25
+# Timed writing in the learner's exam format twice a week, by day number mod 7 [J]. The writing block
+# takes the focus block's minutes, then minutes from speaking, input and the book lesson, each keeping at
+# least half; a task that doesn't fit gives way to a shorter one, and on a minimum day there is none.
+WRITING_DAYS = (4, 0)
+WRITING_REVIEW_MIN = 10
+WRITING_DONORS = ("focus", "speaking", "input", "lesson")
+# One part of the exam's speaking test replaces the everyday speaking task once a week, and exams with
+# language elements (Sprachbausteine) get one part of them in the focus block once a week.
+EXAM_SPEAKING_DAY = 3
+LANGUAGE_ELEMENTS_DAY = 5
 # The input block's weekly rotation, by day number mod 7 [J]; other days are narrow listening.
 # EXTRA_READING_DAY becomes a reading day too while reading (lesen) is the weakest mock module.
 INPUT_ROTATION = {2: "reading", 6: "exam_listening"}
@@ -1378,18 +1388,55 @@ class Engine:
         unit = self.conn.execute(
             """SELECT id, title, data FROM units WHERE status != 'done'
                ORDER BY status = 'in_progress' DESC, position LIMIT 1""").fetchone()
+        task = None
         if minutes < SHORT_DAY_MIN:
             review = (minutes - 5) // 2
             template = [("review", review), ("speaking", minutes - 5 - review), ("close", 5)]
         else:
             template = [(kind, round(base * minutes / 180)) for kind, base in catalog.DAY_180]
-        plan = [self._block(kind, max(block_minutes, 5), focus, due, unit)
+            template, task = self._fit_writing(template)
+        plan = [self._block(kind, max(block_minutes, 5), focus, due, unit, task)
                 for kind, block_minutes in template if kind == "close" or block_minutes >= 5]
         return self._rebalance(plan)
 
-    def _block(self, kind: str, minutes: int, focus: dict, due: list[str], unit: sqlite3.Row | None) -> dict:
+    def _fit_writing(self, template: list[tuple[str, int]]) -> tuple[list[tuple[str, int]], dict | None]:
+        """On a writing day, put the exam's writing task in place of the focus block, if it fits.
+
+        The tasks take turns; when today's doesn't fit the day, a shorter one is tried.
+        """
+        day = (self.progress() or {}).get("day")
+        if not day or day % 7 not in WRITING_DAYS:
+            return template, None
+        tasks = self.exam()["writing"]
+        turn = (day // 7) * len(WRITING_DAYS) + WRITING_DAYS.index(day % 7)
+        today = tasks[turn % len(tasks)]
+        minutes = dict(template)
+        spare = {k: minutes[k] if k == "focus" else minutes[k] // 2 for k in WRITING_DONORS if k in minutes}
+        for task in [today] + sorted((t for t in tasks if t is not today), key=lambda t: t["minutes"]):
+            need = task["minutes"] + WRITING_REVIEW_MIN
+            if need <= sum(spare.values()):
+                break
+        else:
+            return template, None
+        taken, left = {}, need
+        for kind in WRITING_DONORS:
+            taken[kind] = min(spare.get(kind, 0), left)
+            left -= taken[kind]
+        fitted = []
+        for kind, block_minutes in template:
+            if kind == "focus":
+                fitted.append(("writing", need))
+                if block_minutes - taken["focus"] >= 5:
+                    fitted.append(("focus", block_minutes - taken["focus"]))
+            else:
+                fitted.append((kind, block_minutes - taken.get(kind, 0)))
+        return fitted, task
+
+    def _block(self, kind: str, minutes: int, focus: dict, due: list[str], unit: sqlite3.Row | None,
+               task: dict | None = None) -> dict:
         data = json.loads(unit["data"]) if unit else {}
         exam = self.exam()
+        day = (self.progress() or {}).get("day") or 0
         word_order, form, listening = focus["word_order"], focus["form"], focus["listening"]
         block: dict = {"type": kind, "minutes": minutes}
         word_check = (f"First a word check: choose up to {CANDIDATES_MAX} words the page's texts and instructions "
@@ -1422,7 +1469,14 @@ class Engine:
             targets = list(dict.fromkeys([t["id"] for t in (focus["spoken"], word_order, pair) if t]
                                          + focus["probes"]))
             theme = data.get("theme")
+            exam_part = None
+            if day % 7 == EXAM_SPEAKING_DAY and exam["speaking"]:
+                exam_part = exam["speaking"][(day // 7) % len(exam["speaking"])]
+                block["exam_part"] = exam_part
             block.update(title="Speaking", constructs=targets, instructions=(
+                (f"Exam format today ({exam['name']}): the task is this part of the speaking test: {exam_part}. "
+                 + (exam["speaking_rule"] + " " if exam["speaking_rule"] else "")
+                 + "You play the partner or the examiner; the three rounds stay. " if exam_part else "") +
                 f"One everyday task{' on: ' + theme if theme else ''}, done three times: a role-play with an "
                 "unexpected turn, or a talk on familiar content. If `reuse_phrases` lists expressions from the last "
                 "session, set today's task in a new situation that needs them. "
@@ -1524,11 +1578,29 @@ class Engine:
             block.update(title="Focus", constructs=[t["id"] for t in targets],
                          examples={t["id"]: t["examples"] for t in targets},
                          triggers={t["id"]: t["triggers"] for t in targets},
-                         instructions=(" ".join(parts) + " On 4 days a week, a writing task replaces the drill: "
-                                       f"the {exam['name']} writing tasks in turn, against the clock and using "
-                                       "these constructs. Store the text with log_sample('writing') before "
-                                       "correcting it.") if parts else
+                         instructions=" ".join(parts) if parts else
                          "No focus targets yet: run a short free conversation and log what you hear.")
+            if exam.get("language_elements") and day % 7 == LANGUAGE_ELEMENTS_DAY:
+                block["instructions"] += (" Then exam practice: " + exam["language_elements"] + " Log each gap that "
+                                          "tests a construct you track (an ending, a preposition's case, a "
+                                          "connector) with log_attempt, context recognise.")
+        elif kind == "writing":
+            pair = (word_order or {}).get("paired_with")
+            targets = [t["id"] for t in (word_order, pair, form) if t]
+            points = task["points"] or 20
+            block.update(title="Timed writing", exam=exam["name"], task=task["name"], constructs=targets,
+                         instructions=(
+                f"{task['name']} ({exam['name']}). {task['task']} Set a fresh task the way the exam does, with "
+                "its situation and content points (an official practice task if the learner has one). Then "
+                f"{task['minutes']} minutes of writing as in the exam: no help, no dictionary, no translator. Store "
+                "the text with log_sample('writing') before any feedback. Then go through it in this order. "
+                "Content first: the learner shows where each content point is covered. " + exam["writing_rule"]
+                + " Then the language: log each word-order and form error with log_attempt (context free, channel "
+                "typed, with its trigger) and each correct use of these constructs, work on at most two errors "
+                "with prompts, and have the learner rewrite one paragraph. Last, estimate the score by the exam's "
+                f"criteria ({task['criteria']}) and log it with log_measure('writing_task', score, {points}, "
+                "part='schreiben', rater='model', note='<the score per criterion>')"
+                + ("" if task["points"] else ", 5 points per criterion") + ". Say that your mark is an estimate."))
         elif kind == "mission":
             block.update(title="Real-world mission", constructs=[], instructions=(
                 "One real conversation in German today, away from the desk: not only a purchase, but a few turns "

@@ -130,6 +130,6 @@ DAY_180 = [
 
 # Exam gates (day numbers from profile.start_date) and pass rules are per exam: data/exams/*.json.
 
-MEASURE_KINDS = ("mock", "c_test", "onset", "lextale", "fluency", "pronunciation", "human_rating",
+MEASURE_KINDS = ("mock", "writing_task", "c_test", "onset", "lextale", "fluency", "pronunciation", "human_rating",
                  "elicited_imitation", "correction_audit")
 RATERS = ("answer_key", "human", "model")
