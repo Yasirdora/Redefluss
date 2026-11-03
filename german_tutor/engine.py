@@ -41,7 +41,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, catalog
+from . import __version__, catalog, exams
 from .db import connect, db_path
 
 BOOK_DIR = Path(__file__).resolve().parent.parent / "data" / "book"
@@ -79,8 +79,6 @@ BREAK_AFTER_MIN = 50
 BREAK_MIN = 5
 HINT_WINDOW = 8
 HINT_RISE_PCT = 25
-# Which plan block trains which Goethe module, for rebalancing by mock scores.
-SKILL_BLOCK = {"lesen": "input", "hoeren": "input", "schreiben": "focus", "sprechen": "speaking"}
 # The input block's weekly rotation, by day number mod 7 [J]; other days are narrow listening.
 # EXTRA_READING_DAY becomes a reading day too while reading (lesen) is the weakest mock module.
 INPUT_ROTATION = {2: "reading", 6: "exam_listening"}
@@ -118,6 +116,8 @@ LATER_QUESTIONS = {
 # deciding words only for wrong items [J]. The exam never asks for a quote, and quoting doubles the time.
 EVIDENCE_FADE_DAYS = 21
 ADDRESS_FORMS = ("du", "Sie")
+EXAM_QUESTION = ("Which exam exactly: Goethe-Zertifikat B2, telc Deutsch B2, the DTB B2 at the end of a BAMF job "
+                 "course, or none yet?")
 
 # The weekly human lesson [J]: blind ratings of stored speech, and an audit of the tutor model's corrections.
 SAMPLES_TO_RATE = 3
@@ -145,6 +145,12 @@ TEACH_MAX = 2
 ANKI_PER_DAY = 5
 LETTERS = "ABCDE"
 DONT_KNOW = "weiß nicht"
+
+
+def _tip(exam: dict, part: str) -> str:
+    """An exam tip for the tutor to pass on, or nothing when the format has none for this part."""
+    tip = exam.get("tips", {}).get(part)
+    return f" Exam tip to pass on: {tip}" if tip else ""
 
 
 class TutorError(ValueError):
@@ -192,7 +198,8 @@ class Engine:
 
     def save_profile(self, name: str | None = None, first_languages: list | None = None,
                      other_languages: str | None = None, level: str | None = None, goal: str | None = None,
-                     exam: str | None = None, exam_date: str | None = None, exam_day: int | None = None,
+                     exam: str | None = None, exam_format: str | None = None, exam_date: str | None = None,
+                     exam_day: int | None = None,
                      minutes_per_day: int | None = None,
                      schedule: str | None = None, worries: str | None = None,
                      explain_language: str | None = None, book: str | None = None,
@@ -207,6 +214,8 @@ class Engine:
             raise TutorError("exam_day is the number of days until the learner wants to be ready, 1 to 1000.")
         if "minutes_per_day" in given and given["minutes_per_day"] < MIN_SESSION_MIN:
             raise TutorError(f"minutes_per_day must be at least {MIN_SESSION_MIN}.")
+        if "exam_format" in given and given["exam_format"] not in exams.CHOICES:
+            raise TutorError(f"exam_format must be one of: {', '.join(exams.CHOICES)}.")
         if "address" in given and given["address"] not in ADDRESS_FORMS:
             raise TutorError("address must be du or Sie.")
         if "start_date" in given:
@@ -228,7 +237,7 @@ class Engine:
                 raise TutorError("exam_date must be after day 1 and within 1000 days of it.")
         given.setdefault("exam_day", self.profile().get("exam_day", 150))
         self.set_profile(given)
-        return {"profile": self.profile(),
+        return {"profile": self.profile(), "exam": self._exam_choice(),
                 "next": "Start with start_session(minutes). In this first session, also take a one-minute "
                         "speaking sample on a familiar topic (store it with log_sample('speech')) and do one "
                         "exam-style reading item, to show the rule of quoting the words that decide it. If the "
@@ -241,6 +250,27 @@ class Engine:
 
     def profile(self) -> dict:
         return {r["key"]: json.loads(r["value"]) for r in self.conn.execute("SELECT key, value FROM profile")}
+
+    def exam(self) -> dict:
+        """The format of the learner's exam (data/exams), or general B2 practice when there is none or it's unclear."""
+        chosen = self._exam_id()
+        return exams.get(None if chosen == exams.NO_EXAM else chosen)
+
+    def _exam_id(self) -> str | None:
+        """exam_format if the learner confirmed one ('none' included), else the exam their answers name."""
+        profile = self.profile()
+        return profile.get("exam_format") or exams.detect(profile.get("exam"), profile.get("goal"))
+
+    def _exam_choice(self) -> dict:
+        chosen, exam = self._exam_id(), self.exam()
+        result = {"id": exam["id"], "name": exam["name"]}
+        if chosen is None:
+            result["check"] = (f"It isn't clear which exam this is. Ask: {EXAM_QUESTION} Save the answer as "
+                               "exam_format; until then, practice is general B2.")
+        elif "exam_format" not in self.profile():
+            result["check"] = (f"From the learner's answers this is {exam['name']}. Confirm it with them, and save "
+                               "exam_format if it's another.")
+        return result
 
     def add_unit(self, unit: dict) -> None:
         with self.conn:
@@ -294,6 +324,8 @@ class Engine:
         else:
             unasked = {k: q for k, q in {**FIRST_QUESTIONS, **LATER_QUESTIONS}.items()
                        if k not in profile and not (k == "exam_date" and "exam_day" in profile)}
+            if self._exam_id() is None:
+                unasked["exam_format"] = EXAM_QUESTION
             onboarding = {"still_to_ask": unasked} if unasked else {}
         return {
             **onboarding,
@@ -313,12 +345,15 @@ class Engine:
         if "start_date" not in profile:
             return None
         day = (self.today() - date.fromisoformat(profile["start_date"])).days + 1
-        gate = next((g for g in catalog.GATES if g["day"] >= day), None)
+        exam = self.exam()
+        gate = next((g for g in exam["gates"] if g["day"] >= day), None)
         latest_mock = {r["part"]: {"score": f"{r['score']:g}/{r['max_score']:g}", "rater": r["rater"],
                                    "counts_for_gates": r["rater"] in GATE_RATERS}
                        for r in self.conn.execute(
                            "SELECT part, rater, score, max_score FROM measures WHERE kind = 'mock' ORDER BY at, id")}
         return {"day": day, "exam_day": profile.get("exam_day", 150),
+                "exam": {"id": exam["id"], "name": exam["name"], "pass": exam["pass"], "retake": exam["retake"],
+                         "parts": {part: p["name"] for part, p in exam["parts"].items()}},
                 "next_gate": {**gate, "in_days": gate["day"] - day} if gate else None,
                 "latest_mock": latest_mock,
                 "checks_due": [kind for kind in CHECKS_EVERY_DAYS if self._check_due(kind)]}
@@ -623,12 +658,13 @@ class Engine:
             raise TutorError(f"kind must be one of: {', '.join(catalog.MEASURE_KINDS)}.")
         if part is not None:
             part = part.strip().lower().replace("ö", "oe")
-            if part not in SKILL_BLOCK:
-                raise TutorError(f"part must be one of: {', '.join(SKILL_BLOCK)}.")
+            parts = self.exam()["parts"]
+            if part not in parts:
+                raise TutorError(f"part must be one of the {self.exam()['name']} parts: {', '.join(parts)}.")
         if rater is not None and rater not in catalog.RATERS:
             raise TutorError(f"rater must be one of: {', '.join(catalog.RATERS)}.")
         if kind == "mock" and (part is None or rater is None or max_score is None):
-            raise TutorError("A mock score needs part (lesen, hoeren, schreiben, sprechen), max_score and rater "
+            raise TutorError(f"A mock score needs part ({', '.join(self.exam()['parts'])}), max_score and rater "
                              "(answer_key, human or model). Only answer_key and human ratings count for gates.")
         if score < 0 or (max_score is not None and (max_score <= 0 or score > max_score)):
             raise TutorError("score must be at least 0 and, with max_score, no more than it.")
@@ -1353,6 +1389,7 @@ class Engine:
 
     def _block(self, kind: str, minutes: int, focus: dict, due: list[str], unit: sqlite3.Row | None) -> dict:
         data = json.loads(unit["data"]) if unit else {}
+        exam = self.exam()
         word_order, form, listening = focus["word_order"], focus["form"], focus["listening"]
         block: dict = {"type": kind, "minutes": minutes}
         word_check = (f"First a word check: choose up to {CANDIDATES_MAX} words the page's texts and instructions "
@@ -1446,10 +1483,10 @@ class Engine:
                              "transcript, and have the learner write one 15-30 second stretch down word by word "
                              "and check it against the transcript. Use speak() only for drills where the content "
                              "matters more than the voice.",
-                "exam_listening": "One part of a Goethe B2 Hören practice set, a different part each week, "
-                                  "scored with its key. Then go through the misses: " + protocol,
-                "reading": "A Goethe B2 Lesen-format text against the clock, a different text type each time, "
-                           "scored with its key, with no word check first: this is exam practice. Log each item "
+                "exam_listening": exam["listening"] + _tip(exam, "hoeren") + " Then go through the misses: "
+                                  + protocol,
+                "reading": exam["reading"] + _tip(exam, "lesen") + " No word check first: this is exam "
+                           "practice. Log each item "
                            "as reading_detail; a miss's cause is word (an unknown word blocked it), sentence (the "
                            "words were known but the sentence was misread), task (the statement or instruction "
                            "was misunderstood) or unsure. " + (
@@ -1488,9 +1525,9 @@ class Engine:
                          examples={t["id"]: t["examples"] for t in targets},
                          triggers={t["id"]: t["triggers"] for t in targets},
                          instructions=(" ".join(parts) + " On 4 days a week, a writing task replaces the drill: "
-                                       "the two Goethe B2 Schreiben types in turn (a forum post giving an opinion, "
-                                       "a formal message), against the clock and using these constructs. Store "
-                                       "the text with log_sample('writing') before correcting it.") if parts else
+                                       f"the {exam['name']} writing tasks in turn, against the clock and using "
+                                       "these constructs. Store the text with log_sample('writing') before "
+                                       "correcting it.") if parts else
                          "No focus targets yet: run a short free conversation and log what you hear.")
         elif kind == "mission":
             block.update(title="Real-world mission", constructs=[], instructions=(
@@ -1515,9 +1552,15 @@ class Engine:
         if len(latest) < 2:
             return plan
         blocks = {b["type"]: b for b in plan}
-        give = blocks.get(SKILL_BLOCK[max(latest, key=latest.get)])
+        parts = self.exam()["parts"]
+
+        def trains(part: str) -> dict | None:
+            kind = parts[part]["block"] if part in parts else None
+            return blocks.get(kind) or (blocks.get("focus") if kind == "writing" else None)
+
+        give = trains(max(latest, key=latest.get))
         weakest = min(latest, key=latest.get)
-        take = blocks.get(SKILL_BLOCK[weakest])
+        take = trains(weakest)
         # Speaking never gives minutes away: fluency is the learner's main goal.
         if give and take and give is not take and give["type"] != "speaking":
             moved = min(10, give["minutes"] - 5)

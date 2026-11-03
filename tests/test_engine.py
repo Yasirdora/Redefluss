@@ -27,7 +27,7 @@ class EngineTest(unittest.TestCase):
         self.clock = Clock(datetime(2026, 11, 5, 10, 0))
         self.engine = Engine(":memory:", clock=self.clock)
         self.engine.bootstrap(BOOK)
-        self.engine.set_profile({"start_date": "2026-11-05", "exam_day": 150})
+        self.engine.set_profile({"start_date": "2026-11-05", "exam_day": 150, "exam": "Goethe-Zertifikat B2"})
         self.session = self.engine.start_session(180)["session_id"]
 
     def log(self, construct="v2_word_order", context="controlled", correct=True, **extra):
@@ -585,7 +585,7 @@ class MissCauseTest(EngineTest):
         self.session = self.engine.start_session(180)["session_id"]
         block = next(b for b in (self.engine.next_activity(self.session) for _ in range(4)) if b["type"] == "input")
         self.assertEqual(block["constructs"], ["reading_detail", "numbers_times"])
-        self.assertIn("no word check first", block["instructions"])
+        self.assertIn("No word check first", block["instructions"])
 
 
 class WordTest(EngineTest):
@@ -750,7 +750,7 @@ class FirstRunTest(unittest.TestCase):
         self.assertIn("speaking sample", saved["next"])
         self.assertNotIn("onboarding", self.engine.learner_summary())
         self.assertEqual(set(self.engine.learner_summary()["still_to_ask"]),
-                         {"goal", "minutes_per_day", "other_languages", "book", "human_tutor"})
+                         {"goal", "minutes_per_day", "other_languages", "book", "human_tutor", "exam_format"})
         self.assertEqual(self.engine.learner_summary()["progress"]["day"], 1)
         self.engine.start_session(60)
 
@@ -843,6 +843,78 @@ class ReasonTest(EngineTest):
         self.log()
         summary = self.engine.close_session(self.session, 4)
         self.assertEqual(summary["reasons"], {"supports": 2, "contradicts": 1})
+
+
+class ExamTest(EngineTest):
+    """The learner's exam decides the exam-format practice, the gates and the mock parts."""
+
+    def take(self, exam, minutes=180, day=1):
+        """Switch the learner to `exam` (their own words) and start a session on `day`."""
+        self.engine.set_profile({"exam": exam})
+        return self.new_session(minutes, days=day - self.engine.progress()["day"])
+
+    def blocks(self, started):
+        return {b["type"]: b["minutes"] for b in started["plan"]}
+
+    def instructions(self, kind):
+        while True:
+            block = self.engine.next_activity(self.session)
+            if block.get("done"):
+                self.fail(f"no {kind} block")
+            if block["type"] == kind:
+                return block
+
+    def test_the_exam_is_read_from_the_learners_own_words(self):
+        for words, exam in (("telc B2", "telc_b2"), ("the DTB after my BAMF course", "dtb_b2"),
+                            ("Goethe-Zertifikat B2", "goethe_b2"), ("telc B1·B2 Beruf", "general_b2"),
+                            ("Goethe or telc, not sure yet", "general_b2"),
+                            ("Goethe, or the BAMF course", "general_b2")):
+            self.engine.set_profile({"exam": words})
+            self.assertEqual(self.engine.exam()["id"], exam, words)
+        summary = self.engine.learner_summary()
+        self.assertIn("exam_format", summary["still_to_ask"])
+        self.assertEqual(summary["progress"]["next_gate"], None)
+        self.engine.close_session(self.session, 0)
+        choice = self.engine.save_profile(exam_format="telc_b2")["exam"]
+        self.assertEqual((choice["id"], "check" in choice), ("telc_b2", False))
+        self.assertNotIn("exam_format", self.engine.learner_summary().get("still_to_ask", {}))
+        with self.assertRaisesRegex(TutorError, "exam_format must be one of"):
+            self.engine.save_profile(exam_format="toefl")
+
+    def test_a_named_exam_is_confirmed_with_the_learner(self):
+        self.engine.close_session(self.session, 0)
+        choice = self.engine.save_profile(exam="telc")["exam"]
+        self.assertEqual(choice["name"], "telc Deutsch B2")
+        self.assertIn("Confirm it with them", choice["check"])
+        self.assertIn("isn't clear", self.engine.save_profile(exam="maybe one later")["exam"]["check"])
+        self.engine.save_profile(exam_format="none")
+        self.assertEqual(self.engine.exam()["id"], "general_b2")
+        self.assertNotIn("exam_format", self.engine.learner_summary().get("still_to_ask", {}))
+
+    def test_mock_parts_and_gates_follow_the_exam(self):
+        self.engine.set_profile({"exam": "telc Deutsch B2"})
+        progress = self.engine.progress()
+        self.assertEqual(progress["exam"]["parts"]["sprachbausteine"], "Sprachbausteine")
+        self.assertIn("Written and oral", progress["next_gate"]["rule"])
+        self.engine.log_measure("mock", 20, 30, part="Sprachbausteine", rater="answer_key")
+        self.engine.set_profile({"exam": "Goethe-Zertifikat B2"})
+        with self.assertRaisesRegex(TutorError, "Goethe-Zertifikat B2 parts: lesen, hoeren, schreiben, sprechen"):
+            self.engine.log_measure("mock", 20, 30, part="sprachbausteine", rater="answer_key")
+
+    def test_exam_format_practice_follows_the_exam(self):
+        self.take("telc", day=2)  # a reading day
+        self.assertIn("telc Deutsch B2", self.instructions("input")["instructions"])
+        self.take("telc", day=6)  # exam-format listening
+        listening = self.instructions("input")["instructions"]
+        self.assertIn("every text is heard only once", listening)
+        self.assertNotIn("Goethe", listening)
+
+    def test_the_weakest_part_gets_its_minutes_in_its_own_block(self):
+        self.engine.set_profile({"exam": "telc"})
+        self.engine.log_measure("mock", 60, 75, part="lesen", rater="answer_key")
+        self.engine.log_measure("mock", 12, 30, part="sprachbausteine", rater="answer_key")
+        started = self.new_session(days=2)  # day 3, no writing
+        self.assertEqual(self.blocks(started)["focus"], 30)
 
 
 class MigrationTest(unittest.TestCase):

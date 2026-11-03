@@ -12,7 +12,7 @@ import subprocess
 import sys
 import traceback
 
-from . import __version__, catalog
+from . import __version__, catalog, exams
 from .engine import (ARTICLES, CANDIDATES_MAX, CHANNELS, CONTEXTS, REASONS, REPAIRS, SAMPLE_KINDS, WORD_FACETS, WORD_POS,
                      Engine, TutorError)
 
@@ -23,8 +23,9 @@ INSTRUCTIONS = """German tutor engine for one learner. You teach; this server ke
 First run: if learner_summary contains onboarding, there is no learner yet. Interview them with the
 questions under ask, one or two at a time, in a language they are comfortable with, and save the
 answers with save_profile before any lesson; ask the rest over the first sessions (still_to_ask), one
-when it fits. Say that their record stays in a file on this computer, while what they say in lessons
-goes to this AI app's provider. Use their first languages to expect typical errors: articles and
+when it fits. save_profile says which exam format their answers point to: confirm it with them. Say
+that their record stays in a file on this computer, while what they say in lessons goes to this AI
+app's provider. Use their first languages to expect typical errors: articles and
 gender when the first language has none, dropped subject pronouns, verb position.
 
 Workflow: call learner_summary first. Then start_session(minutes) and, for each block, next_activity.
@@ -95,7 +96,8 @@ or log_attempt returns signals, pass them on and follow them.
 
 Days: on a bad day, start_session(20) is a minimum day, and it counts. Anki reviews go first, ideally
 in the morning; if the day is split, put new words later, since sleep after learning helps them stick.
-On a mock-exam day, don't start a plan: log each module with log_measure. On a day with the human
+On a mock-exam day, don't start a plan: log each part of the learner's exam (progress.exam.parts in
+learner_summary) with log_measure, and go over its pass rule (progress.exam.pass). On a day with the human
 tutor, that lesson replaces the speaking block: call human_brief and give the tutor what it returns.
 The lesson is free conversation that tests what carries over, not a grammar class. Afterwards, log
 what the brief asks for: the tutor's blind ratings, their audit of your corrections, any
@@ -137,7 +139,11 @@ TOOLS = [
            "first_languages": {"type": "array", "items": {"type": "string"}},
            "other_languages": {"type": "string", "description": "Other languages and how well, e.g. 'English C1'."},
            "level": {"type": "string", "description": "Their own estimate, how they learned, any certificate."},
-           "goal": {"type": "string"}, "exam": {"type": "string", "description": "e.g. Goethe-Zertifikat B2."},
+           "goal": {"type": "string"},
+           "exam": {"type": "string", "description": "The exam in the learner's words, e.g. telc B2."},
+           "exam_format": {"type": "string", "enum": list(exams.CHOICES),
+                           "description": "The exam format once the learner has confirmed it ('none' for no "
+                                          "exam). Without it, the engine works it out from exam and goal."},
            "exam_date": {"type": "string", "description": "The exam, or when they want to be ready, as "
                                                         "YYYY-MM-DD; sets exam_day."},
            "exam_day": {"type": "integer", "minimum": 1, "maximum": 1000,
@@ -216,7 +222,8 @@ TOOLS = [
                          "checked). Only mocks rated by an answer key or a human count for exam gates.",
           {"kind": {"type": "string", "enum": list(catalog.MEASURE_KINDS)},
            "score": {"type": "number"}, "max_score": {"type": "number", "description": "Required for mocks."},
-           "part": {"type": "string", "enum": ["lesen", "hoeren", "schreiben", "sprechen"]},
+           "part": {"type": "string", "enum": list(exams.PARTS),
+                    "description": "One of the parts of the learner's exam (learner_summary: progress.exam.parts)."},
            "rater": {"type": "string", "enum": list(catalog.RATERS), "description": "Required for mocks."},
            "sample_id": {"type": "integer", "description": "For a human_rating: the stored sample it rates."},
            "note": {"type": "string"}},

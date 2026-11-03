@@ -1,0 +1,45 @@
+{
+  "id": "dtb_b2",
+  "name": "DTB B2 (Deutsch-Test für den Beruf B2)",
+  "detect": {"any": ["dtb", "deutsch-test für den beruf", "deutschtest für den beruf", "berufssprachkurs", "bamf"], "none": []},
+  "sources": [
+    "telc/BAMF: Prüfungshandbuch Deutsch-Tests für den Beruf A2, B1, B2 und C1, 1st edition 2021 (bamf.de)",
+    "telc.net, Deutsch-Test für den Beruf page (checked 2026-11-06)"
+  ],
+  "parts": {
+    "lesen": {"name": "Lesen", "points": null, "block": "input"},
+    "hoeren": {"name": "Hören", "points": null, "block": "input"},
+    "schreiben": {"name": "Schreiben (with Sprachbausteine and the two mediation tasks)", "points": null, "block": "writing"},
+    "sprechen": {"name": "Sprechen", "points": null, "block": "speaking"}
+  },
+  "pass": "60 % of the total points, where the skills can make up for each other, but at least 40 % in each of Lesen, Hören, Schreiben and Sprechen. The points per part and the scoring are set out in the DTB B2 model test.",
+  "retake": "The DTB is taken at the end of a BAMF Berufssprachkurs B2, through the course provider: ask them about dates and retakes.",
+  "gates": [
+    {"day": 90, "rule": "Total at least 55 % and every skill at least 45 % on a fresh mock. A skill under 40 % fails the exam on its own: it gets the rebalanced minutes."},
+    {"day": 120, "rule": "Total at least 65 % and every skill at least 50 % on two fresh mocks."},
+    {"day": 140, "rule": "Final fresh mock: total at least 70 %, every skill at least 50 %."}
+  ],
+  "reading": "One part of the DTB B2 model test, against the clock and scored with its key, a different part each time: Lesen 1 (match 5 people's work questions to teasers of online articles), Lesen 2 (detailed work instructions: true/false and multiple choice), Lesen 3 (an online forum about working conditions), Lesen 4 (the minutes of a managers' meeting, 3 options per item) or Lesen und Schreiben (a customer's complaint forwarded with the team lead's instructions, 2 items).",
+  "listening": "One part of the DTB B2 model test, scored with its key and played once, as in the exam, where every recording is heard once: Hören 1 (work processes, problems and suggestions), Hören 2 (following arguments in a discussion, matching), Hören 3 (a meeting, multiple choice), Hören 4 (voice messages, multiple choice) or Hören und Schreiben (a phone message, then a phone-note form with name, number, request and next steps, so that a colleague can act on it).",
+  "writing": [
+    {"id": "forum", "name": "Schreiben: a post in a staff forum giving your opinion", "minutes": 25, "words": null, "points": null,
+     "task": "Choose variant A or B: a post in the company intranet's staff forum that gives and justifies your opinion to colleagues, semi-formal to formal.",
+     "criteria": "I Kommunikative Aufgabenbewältigung, II Kommunikative Gestaltung, III Formale Richtigkeit, IV Spektrum sprachlicher Mittel"},
+    {"id": "complaint", "name": "Lesen und Schreiben: a formal reply to a customer's complaint", "minutes": 25, "words": null, "points": null,
+     "task": "Read a customer's complaint that the team lead forwarded with instructions, then write the formal email reply to the customer as instructed: polite, factual, with the information the customer needs.",
+     "criteria": "I Kommunikative Aufgabenbewältigung, II Kommunikative Gestaltung, III Formale Richtigkeit, IV Spektrum sprachlicher Mittel"}
+  ],
+  "writing_rule": "There is no word count and no counting of content points: short, readable texts that suit the reader are rewarded. The handbook gives no time per writing task, so these practice times are an estimate. The Schreiben skill also covers the phone note and the Sprachbausteine.",
+  "speaking": [
+    "Teil 1A and 1B: a short formal presentation on one of two topics from a list known in advance (prepare at home), then answer the examiner's questions about it",
+    "Teil 1C: explain one aspect of the partner's presentation to the examiner (mediation), so listen closely while they speak",
+    "Teil 2: an informal chat with colleagues, as in a break: ask and answer spontaneously",
+    "Teil 3: discuss a problem at work with the partner and plan together how to proceed"
+  ],
+  "speaking_rule": "Criteria: Kommunikative Aufgabenbewältigung (fluency included), Aussprache und Intonation, Formale Richtigkeit, Spektrum sprachlicher Mittel. The register changes: formal in Teil 1, informal with colleagues in Teil 2.",
+  "language_elements": "One DTB Sprachbausteine part, scored with its key: Teil 1 (a formal letter or email: fill 6 gaps from 10 words or phrases) or Teil 2 (a formal email: 6 gaps, 3 options each, mostly noun-verb phrases such as eine Entscheidung treffen).",
+  "tips": {
+    "hoeren": "Every recording is heard once. In Hören und Schreiben, names and numbers come fast: write them down as you hear them.",
+    "lesen": "The texts are work texts: instructions, forum posts, minutes. No specialist knowledge is needed, only how a company works."
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "general_b2",
+  "name": "B2 practice without a set exam",
+  "detect": null,
+  "sources": [],
+  "parts": {
+    "lesen": {"name": "Lesen", "points": null, "block": "input"},
+    "hoeren": {"name": "Hören", "points": null, "block": "input"},
+    "schreiben": {"name": "Schreiben", "points": null, "block": "writing"},
+    "sprechen": {"name": "Sprechen", "points": null, "block": "speaking"}
+  },
+  "pass": "No exam is set yet.",
+  "retake": null,
+  "gates": [],
+  "reading": "A B2-level text against the clock with comprehension items and a key (matching, true or false, multiple choice), a different text type each time.",
+  "listening": "B2-level recorded speech with comprehension items and a key, a different kind each week: news, an interview, announcements.",
+  "writing": [
+    {"id": "opinion", "name": "an opinion post", "minutes": 40, "words": 150, "points": null,
+     "task": "A post of about 150 words that gives and justifies an opinion, with an example.",
+     "criteria": "content, coherence, range, accuracy"},
+    {"id": "email", "name": "a formal email", "minutes": 25, "words": 100, "points": null,
+     "task": "A formal email of about 100 words, a request or a complaint, with a subject line, a greeting, an introduction and a close.",
+     "criteria": "content, coherence, range, accuracy"}
+  ],
+  "writing_rule": "Check the content first (every point the task asks for), then coherence, range and accuracy.",
+  "speaking": [
+    "a short prepared talk on a familiar topic, then questions about it",
+    "a discussion: give and justify a view, then react to the other side"
+  ],
+  "speaking_rule": "",
+  "tips": {}
+}

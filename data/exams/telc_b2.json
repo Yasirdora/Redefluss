@@ -1,0 +1,46 @@
+{
+  "id": "telc_b2",
+  "name": "telc Deutsch B2",
+  "detect": {"any": ["telc"], "none": ["beruf", "medizin", "pflege", "dtb", "goethe"]},
+  "sources": [
+    "telc.net, telc Deutsch B2 exam page (format checked 2026-11-06)",
+    "telc: Tipps zur Prüfungsvorbereitung Deutsch B2, 6th edition, 2020",
+    "telc Prüfungsregularien, Anhang 1: Anrechnung von Teilergebnissen"
+  ],
+  "parts": {
+    "lesen": {"name": "Leseverstehen", "points": 75, "block": "input"},
+    "sprachbausteine": {"name": "Sprachbausteine", "points": 30, "block": "focus"},
+    "hoeren": {"name": "Hörverstehen", "points": 75, "block": "input"},
+    "schreiben": {"name": "Schriftlicher Ausdruck", "points": 45, "block": "writing"},
+    "sprechen": {"name": "Mündlicher Ausdruck", "points": 75, "block": "speaking"}
+  },
+  "pass": "Results are given for the written exam (Leseverstehen, Sprachbausteine, Hörverstehen and Schriftlicher Ausdruck: 225 points) and the oral exam (75 points) separately, 300 in all. The pass mark is commonly given as 60 % of each (135 and 45 points), but the telc documents checked here don't state it: confirm it in telc's current Übungstest.",
+  "retake": "At B2, after a fail, the written or the oral exam alone can be retaken within twelve months, with the other result carried over. Single subtests can't be retaken.",
+  "gates": [
+    {"day": 90, "rule": "Written and oral each at least 55 % on a fresh mock. One below: it gets the rebalanced minutes. Both below: move the exam to about day 190."},
+    {"day": 120, "rule": "Written and oral each at least 65 % on two fresh mocks: book the exam."},
+    {"day": 140, "rule": "Final fresh mock at least 70 % in the written and the oral exam."}
+  ],
+  "reading": "One part of a telc Deutsch B2 practice set, against the clock and scored with its key, a different part each time: Leseverstehen Teil 1 (reading for gist: 5 texts, 10 headings, about 15 minutes), Teil 2 (detail: one text, 5 items with 3 options, about 20 minutes) or Teil 3 (selective: 10 situations and 12 short texts such as adverts, not every situation has a text, about 20 minutes). In the exam, Leseverstehen and Sprachbausteine share 90 minutes, including about 10 minutes to transfer answers to the answer sheet.",
+  "listening": "One part of a telc Deutsch B2 Hörverstehen practice set, a different part each week, scored with its key and played once, as in the exam, where every text is heard only once: Teil 1 (6 radio news items and 5 true/false statements, one item has none), Teil 2 (an interview, 10 true/false statements) or Teil 3 (5 short announcements, 5 true/false statements). Expect some regional accents.",
+  "writing": [
+    {"id": "A", "name": "Schriftlicher Ausdruck, Aufgabe A: a semi-formal email asking for information", "minutes": 30, "words": 150, "points": 45,
+     "task": "React to a short text, such as an advert, with an email of at least 150 words asking for information. Cover at least three of the four Leitpunkte (or two and an aspect of your own), with a subject line, a fitting greeting, an introduction and a close.",
+     "criteria": "I Aufgabenbewältigung, II Kommunikative Gestaltung, III Formale Richtigkeit: A, B, C or D = 5, 3, 1 or 0 each, the sum times 3"},
+    {"id": "B", "name": "Schriftlicher Ausdruck, Aufgabe B: a semi-formal email of complaint", "minutes": 30, "words": 150, "points": 45,
+     "task": "React to a short text, such as an advert or an email, with a complaint of at least 150 words. Cover at least three of the four Leitpunkte (or two and an aspect of your own), with a subject line, a fitting greeting, an introduction and a close.",
+     "criteria": "I Aufgabenbewältigung, II Kommunikative Gestaltung, III Formale Richtigkeit: A, B, C or D = 5, 3, 1 or 0 each, the sum times 3"}
+  ],
+  "writing_rule": "In the exam the learner chooses one of the two tasks in 30 minutes, so the choice should be quick. Criterion I needs three Leitpunkte, or two and an own aspect, dealt with properly; a text with little or no connection to the task gets D in every criterion. Don't draft and copy out: keyword notes, then the final text. In the exam, the task number must go on the answer sheet or the text isn't scored.",
+  "speaking": [
+    "Teil 1: talk for about 1½ minutes about an experience (a book, a film, a trip; the seven topics are known in advance from the Übungstest), answer the partner's questions, then ask questions about the partner's talk (about 5 minutes, 25 points)",
+    "Teil 2: discuss a controversial text both partners have read: what it says and what struck you, then your arguments, reacting to the partner's and, where it fits, a compromise (about 5 minutes, 25 points)",
+    "Teil 3: plan something together, such as a trip or a party: make suggestions and accept or turn down the partner's (Was? Wer? Wann? Wo? Essen und Trinken? Kosten?) (about 5 minutes, 25 points)"
+  ],
+  "speaking_rule": "In pairs, about 16 minutes, after 20 minutes of preparation; notes may be used. Talk with the partner, not the examiner: share the time, react, ask, help them out. Criteria: Ausdrucksfähigkeit, Aufgabenbewältigung, Formale Richtigkeit, Aussprache und Intonation. Show some complex structures (subordinate clauses, passive, Konjunktiv II).",
+  "language_elements": "One telc Sprachbausteine part, scored with its key: Teil 1 (an email with 10 gaps, 3 options each: grammar, about 15 minutes) or Teil 2 (a magazine text with 10 gaps filled from 15 words: vocabulary, about 20 minutes). Never leave a gap empty.",
+  "tips": {
+    "lesen": "Read the headings or statements first. In Teil 2 the items follow the text's order, one wrong detail makes an option wrong, and only what the text says counts, not what you know about the topic.",
+    "hoeren": "Read the statements in the time given, listen for the same meaning in other words, and mark an answer at once, even when unsure: there is no second play."
+  }
+}

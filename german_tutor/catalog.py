@@ -128,16 +128,7 @@ DAY_180 = [
     ("close", 5),
 ]
 
-# Exam gates, counted from profile.start_date (day 1). Goethe B2 passes each module
-# at 60/100; 55, 65 and 70 are buffers [J]. Only mocks rated by an answer key or a human count.
-GATES = [
-    {"day": 90, "rule": "Every module >= 55 on a fresh mock. Exactly one below 55: it gets the rebalanced "
-                        "minutes and becomes the module to split off at day 120. Two or more below 55: "
-                        "move the exam to about day 190."},
-    {"day": 120, "rule": "Every module >= 65 on two fresh mock sets: book all four. Otherwise book the "
-                         "modules that cleared 65 twice and the rest about 6 weeks later."},
-    {"day": 140, "rule": "Final fresh mock >= 70 in every booked module; 60 is the pass mark."},
-]
+# Exam gates (day numbers from profile.start_date) and pass rules are per exam: data/exams/*.json.
 
 MEASURE_KINDS = ("mock", "c_test", "onset", "lextale", "fluency", "pronunciation", "human_rating",
                  "elicited_imitation", "correction_audit")

@@ -1,0 +1,41 @@
+{
+  "id": "goethe_b2",
+  "name": "Goethe-Zertifikat B2",
+  "detect": {"any": ["goethe"], "none": ["telc", "dtb", "ösd", "osd"]},
+  "sources": [
+    "Goethe-Institut: Goethe-Zertifikat B2, model test and exam regulations, version of September 2025 (goethe.de > Goethe-Zertifikat B2 > Übungsmaterialien), cross-checked by three web-searching reviews in November 2026"
+  ],
+  "parts": {
+    "lesen": {"name": "Lesen", "points": 100, "block": "input"},
+    "hoeren": {"name": "Hören", "points": 100, "block": "input"},
+    "schreiben": {"name": "Schreiben", "points": 100, "block": "writing"},
+    "sprechen": {"name": "Sprechen", "points": 100, "block": "speaking"}
+  },
+  "pass": "Each module passes at 60 of 100, on its own. In Lesen and Hören, 18 of 30 items right is 60.",
+  "retake": "Modules can be taken and retaken separately.",
+  "gates": [
+    {"day": 90, "rule": "Every module at least 55 on a fresh mock. Exactly one below 55: it gets the rebalanced minutes and becomes the module to split off at day 120. Two or more below 55: move the exam to about day 190."},
+    {"day": 120, "rule": "Every module at least 65 on two fresh mock sets: book all four. Otherwise book the modules that cleared 65 twice and the rest about 6 weeks later."},
+    {"day": 140, "rule": "Final fresh mock at least 70 in every booked module; 60 is the pass mark."}
+  ],
+  "reading": "One part of a Goethe-Zertifikat B2 Lesen practice set (5 parts, 30 items; 65 minutes in the exam, about 18, 12, 12, 12 and 6 minutes per part), a different part each time, against the clock and scored with its key.",
+  "listening": "One part of a Goethe-Zertifikat B2 Hören practice set (4 parts, 30 items; parts 1 and 3 are heard once, parts 2 and 4 twice), a different part each week, played as in the exam and scored with its key.",
+  "writing": [
+    {"id": "forum", "name": "Schreiben Teil 1: a forum post giving an opinion", "minutes": 50, "words": 150, "points": 60,
+     "task": "A forum post of about 150 words that gives and justifies an opinion on a topic, covering every content point in the task.",
+     "criteria": "Erfüllung 14, Kohärenz 14, Wortschatz 16, Strukturen 16"},
+    {"id": "message", "name": "Schreiben Teil 2: a formal message at work", "minutes": 25, "words": 100, "points": 40,
+     "task": "A formal message of about 100 words to someone at work, such as a superior, covering every content point in the right register.",
+     "criteria": "Erfüllung, Kohärenz, Wortschatz and Strukturen, 10 each"}
+  ],
+  "writing_rule": "If task fulfilment (Erfüllung) is in the lowest band (a content point missing, the wrong topic, or under half the length), the whole task scores 0, however good the German. Cover every content point first, then polish.",
+  "speaking": [
+    "Teil 1: a talk of about 4 minutes on a topic (introduction, points, opinion, close), then answer questions about it",
+    "Teil 2: a discussion of about 5 minutes with a partner: give and justify a position, react to the partner's arguments, reach a conclusion"
+  ],
+  "speaking_rule": "15 minutes of preparation: keywords, not a script. Points come for a structured talk, real answers to follow-up questions, reacting to the partner instead of giving a monologue, and the right register (du or Sie). Pronunciation is about 16 of 100 points.",
+  "tips": {
+    "lesen": "Mark an item and move on after about 90 seconds; never leave a blank.",
+    "hoeren": "Use every reading window before a recording; never leave a blank."
+  }
+}
