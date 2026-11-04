@@ -587,6 +587,18 @@ class MissCauseTest(EngineTest):
         self.assertEqual(block["constructs"], ["reading_detail", "numbers_times"])
         self.assertIn("No word check first", block["instructions"])
 
+    def test_listening_ends_by_ear_and_brings_new_voices_once_a_week(self):
+        def listening(days):
+            self.new_session(days=days)
+            return next(b for b in iter(lambda: self.engine.next_activity(self.session), None)
+                        if b["type"] == "input")["instructions"]
+
+        self.assertIn("hasn't heard before", listening(2))  # day 3
+        familiar = listening(1)  # day 4
+        self.assertIn("the same speakers", familiar)
+        self.assertGreater(familiar.index("without the transcript"), familiar.index("while reading the transcript"))
+        self.assertIn("once more without the transcript", listening(2))  # day 6: exam-format listening
+
 
 class WordTest(EngineTest):
     WORDS = [

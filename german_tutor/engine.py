@@ -93,6 +93,12 @@ LANGUAGE_ELEMENTS_DAY = 5
 # EXTRA_READING_DAY becomes a reading day too while reading (lesen) is the weakest mock module.
 INPUT_ROTATION = {2: "reading", 6: "exam_listening"}
 EXTRA_READING_DAY = 5
+# Narrow listening keeps the same speakers for weeks; once a week, voices the learner hasn't heard, since
+# the exam brings unknown speakers and accents. Every listening ends with one listen without the transcript,
+# so the last pass is by ear and not by reading.
+UNFAMILIAR_SPEAKERS_DAY = 3
+LAST_LISTEN = (" Last, play the recording once more without the transcript, so the ear does the work alone, and ask "
+               "what the learner catches now that they missed at first.")
 GATE_RATERS = ("answer_key", "human")
 # A session shorter than this is a minimum day [J]: reviews, retests and one speaking task, so a bad day
 # still counts. Below MIN_SESSION_MIN there is no useful plan.
@@ -1500,7 +1506,6 @@ class Engine:
                 "without help with log_word (facet use), and log syllables per minute with log_measure('fluency'), "
                 "with the number of mid-clause pauses and self-repairs in its note."))
         elif kind == "input":
-            day = (self.progress() or {}).get("day")
             latest = self._latest_mocks()
             rotation = dict(INPUT_ROTATION)
             if len(latest) >= 2 and min(latest, key=latest.get) == "lesen":
@@ -1532,13 +1537,17 @@ class Engine:
                         "times and dates, with that cause. Practise asking instead of guessing "
                         "(clarification_repair).")
             main = {
-                "listening": "Recorded real speech: the book's audio, or one podcast or channel with the same "
-                             "speakers for a few weeks. " + protocol + " Then listen once more while reading the "
-                             "transcript, and have the learner write one 15-30 second stretch down word by word "
-                             "and check it against the transcript. Use speak() only for drills where the content "
-                             "matters more than the voice.",
+                "listening": ((
+                    "Today, speakers the learner hasn't heard before: another podcast or channel, a regional accent "
+                    "(Austrian, Swiss, Bavarian, the Ruhr) or several voices talking at once, at natural speed. Say "
+                    "that more misses are expected and are the point. ") if day % 7 == UNFAMILIAR_SPEAKERS_DAY else
+                    "Recorded real speech: the book's audio, or one podcast or channel with the same speakers for a "
+                    "few weeks. ") + protocol + " Then listen once more while reading the transcript, and have the "
+                             "learner write one 15-30 second stretch down word by word and check it against the "
+                             "transcript." + LAST_LISTEN + " Use speak() only for drills where the content matters "
+                             "more than the voice.",
                 "exam_listening": exam["listening"] + _tip(exam, "hoeren") + " Then go through the misses: "
-                                  + protocol,
+                                  + protocol + LAST_LISTEN,
                 "reading": exam["reading"] + _tip(exam, "lesen") + " No word check first: this is exam "
                            "practice. Log each item "
                            "as reading_detail; a miss's cause is word (an unknown word blocked it), sentence (the "
