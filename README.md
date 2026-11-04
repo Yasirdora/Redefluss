@@ -103,7 +103,7 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
   - A construct with fewer than 3 answers is probed, not drilled. One-off slips are logged but never drilled.
 - **Mistakes are counted as patterns.**
   - An error on a word-order or form construct needs its trigger: the word that set the rule off (deswegen for verb-second, weil for verb-last, mit for case, the noun for an article). The same construct and trigger make one pattern.
-  - A pattern comes back as a retest in the next session's review block: a fresh prompt with the same trigger, in the channel it went wrong in. A retest passed without a hint, unsure scoring or same-day drilling schedules the next one 4 days later; passing that resolves the pattern. Another error resets it.
+  - A pattern comes back as a retest in the next session's review block: a fresh prompt with the same trigger, in the channel it went wrong in. A retest passed without a hint, unsure scoring or same-day drilling schedules the next one 4 days later, then 10 days after that; passing the third resolves the pattern. Another error resets it.
   - At most 6 retests a session, one per construct, so one doesn't prime the next. Patterns that recur over several days come first.
   - Focus targets show failure rates per channel and per trigger. The speaking block pulls the construct failing most in speech, which written drills don't fix.
   - A listening miss is classified as speed (caught on one audio-only replay), decoding (clear in print), knowledge (unclear in print too), retention or unsure. A reading miss is word, sentence, task or unsure; every reading answer, right or wrong, is backed by the words in the text that decide it.

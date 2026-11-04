@@ -140,9 +140,10 @@ SAMPLES_TO_RATE = 3
 AUDIT_SIZE = 10
 # Error patterns [J]: a construct plus the word that set it off. An error schedules a retest
 # RETEST_DAYS[0] days later; each retest passed without help schedules the next one, RETEST_DAYS[stage]
-# days on, and passing the last resolves the pattern. Another error resets it.
+# days on, and passing the last resolves the pattern. Another error resets it. Gaps that grow to more than
+# a week test what lasts, not what is still fresh from the last session.
 PATTERN_TRACKS = ("word_order", "form")
-RETEST_DAYS = (1, 4)
+RETEST_DAYS = (1, 4, 10)
 RETESTS_PER_SESSION = 6
 # A listening or reading miss is classified, so it can be counted.
 LISTENING_CAUSES = ("speed", "decoding", "knowledge", "retention", "unsure")

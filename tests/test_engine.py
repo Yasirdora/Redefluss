@@ -511,15 +511,19 @@ class PatternTest(EngineTest):
         self.assertEqual((retest["trigger"], retest["channel"], retest["seen"], retest["their_sentence"]),
                          ("deswegen", "spoken", "2 error(s) on 1 day(s)", "deswegen ich kann"))
 
-    def test_two_passed_retests_on_spaced_days_resolve_a_pattern(self):
+    def test_three_passed_retests_on_growing_gaps_resolve_a_pattern(self):
         self.log(correct=False)
         self.new_session()
-        pattern = self.review()["retests"][0]["retest"]
+        [retest] = self.review()["retests"]
+        pattern = retest["retest"]
+        self.assertEqual(retest["retest_number"], "1 of 3")
         self.assertEqual(self.log(retest=pattern)["retest"], {"pattern": pattern, "passed": True,
                                                               "next_retest": "2026-11-10"})
         with self.assertRaisesRegex(TutorError, "isn't due until 2026-11-10"):
             self.log(retest=pattern)
         self.new_session(days=4)
+        self.assertEqual(self.log(retest=pattern)["retest"]["next_retest"], "2026-11-20")
+        self.new_session(days=10)
         self.assertTrue(self.log(retest=pattern)["retest"]["resolved"])
         self.assertEqual(self.engine.learner_summary()["patterns"]["resolved"], 1)
         self.new_session()
