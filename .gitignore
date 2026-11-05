@@ -7,6 +7,7 @@ anki/
 # Copyrighted or third-party material: load your own copy (see README).
 data/book/
 data/frequency/
+data/nouns/
 *.pdf
 
 # Notes and model reviews from development.

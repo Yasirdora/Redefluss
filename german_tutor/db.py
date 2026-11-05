@@ -123,6 +123,18 @@ CREATE TABLE IF NOT EXISTS word_checks (
     items       TEXT NOT NULL,          -- JSON: questions with their keys, and the words only glossed or shown
     answered_at TEXT                    -- from then on, every word in it counts as shown for the session
 );
+CREATE TABLE IF NOT EXISTS gender_drills (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  INTEGER NOT NULL REFERENCES sessions(id),
+    at          TEXT NOT NULL,
+    items       TEXT NOT NULL,          -- JSON: word ids with the lexicon's articles and plurals
+    answered_at TEXT
+);
+CREATE TABLE IF NOT EXISTS nouns (      -- a noun lexicon, loaded with scripts/import_nouns.py
+    lemma    TEXT PRIMARY KEY,          -- nominative singular, as written
+    articles TEXT NOT NULL,             -- der, die, das; several for nouns such as Joghurt
+    plurals  TEXT NOT NULL              -- nominative plurals separated by |, empty if none is listed
+);
 CREATE TABLE IF NOT EXISTS frequency (
     word TEXT PRIMARY KEY,              -- lower case
     rank INTEGER NOT NULL               -- 1 = most frequent

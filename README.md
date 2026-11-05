@@ -48,6 +48,16 @@ curl -L -o data/frequency/de_50k.txt https://raw.githubusercontent.com/hermitdav
 python3 scripts/import_frequency.py data/frequency/de_50k.txt
 ```
 
+### Optional: a noun lexicon
+
+With a noun lexicon, the gender drill (`gender_drill`) checks the learner's article and plural against a dictionary instead of the tutor model's memory, and a wrong stored article gets corrected. Without one, there is no gender drill. The lexicon from [gambolputty/german-nouns](https://github.com/gambolputty/german-nouns) (CC BY-SA 4.0, built from Wiktionary, about 20 MB) has about 100,000 nouns:
+
+```bash
+mkdir -p data/nouns
+curl -L -o data/nouns/nouns.csv https://raw.githubusercontent.com/gambolputty/german-nouns/main/german_nouns/nouns.csv
+python3 scripts/import_nouns.py data/nouns/nouns.csv
+```
+
 ### Optional: your textbook
 
 Units of the textbook you work through go in `data/book/`, one JSON file per unit: its pages, sections, target constructs and any answer keys you have. `tests/fixtures/book/B1-U3.json` shows the format with invented content. Publishers' books and keys are copyrighted, so `data/book/` is git-ignored: keep your extractions to yourself. Without a book, the tutor asks which page you're on and works from a photo.
@@ -81,6 +91,8 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
 | `answer_word_check` | Scores the learner's letters, records the evidence, and says which words to teach and which to gloss |
 | `show_words` | Records words given to the learner, such as in a planning step, so using them that day doesn't count |
 | `log_word` | One observation about a word: meaning asked about, missed in audio, wrong article, or used without help |
+| `gender_drill` | Nouns from the learner's word list whose gender isn't settled, for the learner to say with article and plural; needs the noun lexicon |
+| `answer_gender_drill` | Scores the answers against the lexicon: the article as gender evidence for the word, the plural as a `noun_plural` answer with the noun as trigger |
 | `export_anki` | Writes today's new Anki cards to tab-separated files to import: words (at most 5 new a day) and sentence cards from the learner's own corrected errors (at most 5) |
 | `human_brief` | A brief for the weekly human lesson: what to listen for, what to steer towards, stored speech to rate blind, the tutor's latest corrections to audit, and a sentence-repetition test when one is due |
 | `speak` | Reads German aloud with macOS `say`, for drills where the content matters more than the voice, such as numbers and times |
@@ -111,6 +123,7 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
   - A facet is known after unprimed evidence on 2 different days since its last miss. A word shown, glossed or corrected earlier in a session counts as primed for the rest of it.
   - The tutor model may record misses and uses, but never that a meaning is known: understanding a text doesn't prove each word.
   - A word check tests up to 6 words by multiple choice with a "weiß nicht" option, plus the gender of each noun not yet known. The engine holds the key and scores the letters. Gender only counts when the meaning was right.
+  - With a noun lexicon loaded, the review block has a gender drill: the learner says article, noun and plural (der Termin, die Termine) for their own nouns whose gender isn't known, missed ones first. The lexicon scores it, so the model's memory of der, die or das never decides. Nouns with two genders (der or das Joghurt) accept both.
   - It tests words the task needs, however rare: needed common words first, then the other needed words, then common words the task doesn't need (within the top 10,000 of the frequency list). Other words are only glossed. A subtitle list ranks work words like Bewerbung low, so marking a word as needed is what counts.
   - At most 2 missed words are taught on the spot; the rest are glossed. A missed word goes to Anki if the task needed it, it is common, or it was missed on 2 days, with at most 5 new cards a day. Anki keeps the review schedule.
   - Errors become Anki cards too, at most 5 a day: the learner's own sentence, corrected, with the changed words gapped and their words as the hint (`Deswegen ___ nach Berlin. (ich / fahre)`). One card per open pattern, and none for a rewritten sentence.
@@ -135,8 +148,9 @@ server.py       starts the MCP server
 data/measures/  the sentence-repetition test, two forms of 12 sentences
 data/book/      your textbook units, one JSON file per unit (git-ignored)
 data/frequency/ an optional frequency list (git-ignored)
+data/nouns/     an optional noun lexicon (git-ignored)
 data/private/   tutor.db, Anki exports (git-ignored)
-scripts/        init_db.py, import_frequency.py, export_rules.py
+scripts/        init_db.py, import_frequency.py, import_nouns.py, export_rules.py
 tests/          engine and MCP protocol tests, with an invented book unit in fixtures/
 ```
 
@@ -146,7 +160,6 @@ tests/          engine and MCP protocol tests, with an invented book unit in fix
 
 - Reading Anki's review history (read-only), so a word Anki has settled isn't checked again.
 - `check_german`: LanguageTool plus verb-position rules, as a second judge for typed free use.
-- A noun lexicon (gender and plural from Wiktionary) so the engine, not the model, holds der/die/das.
 - The speech pipeline: speech recognition, fluency metrics and pronunciation scoring. The learner's own transcript of their recording comes first.
 - An independent examiner model, used only once 20 or more stored samples have human ratings, with its agreement with the human reported.
 
@@ -154,4 +167,4 @@ The MCP layer is written without the SDK because the SDK needs Python 3.10 or ne
 
 ## Third-party data
 
-The sentence-repetition forms in `data/measures/` and the test unit in `tests/fixtures/` are original. Data you load yourself, such as a frequency list or a textbook, keeps its own licence and stays out of the repository.
+The sentence-repetition forms in `data/measures/` and the test fixtures in `tests/fixtures/` are original. Data you load yourself, such as a frequency list, a noun lexicon or a textbook, keeps its own licence and stays out of the repository.

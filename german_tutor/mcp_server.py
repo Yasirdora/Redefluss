@@ -58,7 +58,8 @@ tasks: name the topic, and collect unknown words afterwards. Log what you see wi
 the learner asked about or misread (meaning, false), a word missed in audio but clear in print
 (hearing, false), a wrong article (gender, false), a word used well without help (use, true). You
 can't record that a meaning is known. Record words you give in a planning step with show_words
-first. At the close, call export_anki.
+first. With a noun lexicon loaded, gender_drill has the learner say article, noun and plural, and
+answer_gender_drill scores them against the lexicon and logs them. At the close, call export_anki.
 
 Teaching rules: the learner always attempts first. Give hints in steps (category, then location,
 then a partial answer) and log the hint_level you used. Correct with prompts, not by saying the right
@@ -269,6 +270,20 @@ TOOLS = [
            "answer": {"type": "string", "description": "What the learner said or wrote, e.g. 'der Tür'."},
            "example": {"type": "string"}},
           ("session_id", "lemma", "facet", "correct")),
+    _tool("gender_drill", "Nouns from the learner's word list whose gender isn't known yet, for them to say with "
+                          "article and plural (der Termin, die Termine). Needs the noun lexicon "
+                          "(scripts/import_nouns.py).",
+          {"session_id": {"type": "integer"},
+           "count": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Default 8."}},
+          ["session_id"]),
+    _tool("answer_gender_drill", "Score a gender drill against the noun lexicon. The article is gender evidence for "
+                                 "the word; the plural is logged as noun_plural with the noun as trigger.",
+          {"drill_id": {"type": "integer"},
+           "answers": {"type": "array", "items": {"type": "string"},
+                       "description": "The learner's answers in item order, exactly as given, e.g. "
+                                      "'der Termin, die Termine', 'die Firma, kein Plural' or 'weiß nicht'."},
+           "channel": {"type": "string", "enum": ["typed", "spoken"]}},
+          ["drill_id", "answers"]),
     _tool("export_anki", "Write today's new Anki cards to files the learner imports: words (at most 5 new a day) "
                          "and sentence cards from their own corrected errors (at most 5)."),
     _tool("human_brief", "A brief for the weekly lesson with a human tutor: the format, the mistakes to listen "

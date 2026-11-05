@@ -162,6 +162,9 @@ CHECK_SIZE = 6
 COMMON_RANK = 10000  # in a word-form frequency list, which ranks lemmas lower than a lemma list would
 TEACH_MAX = 2
 ANKI_PER_DAY = 5
+# The gender drill [J]: the learner produces article, noun and plural (der Termin, die Termine) for nouns
+# whose gender isn't settled, scored against a noun lexicon rather than the tutor model's memory.
+GENDER_DRILL_SIZE = 8
 # Sentence cards from the learner's own corrected errors [J], on top of the new words: the corrected sentence
 # with the changed words gapped and the learner's own words as the hint. One card per open pattern, and only
 # for a short, targeted fix: a rewritten sentence makes a poor card.
@@ -190,6 +193,24 @@ def _cloze(sentence: str, correction: str) -> tuple[str, list[str]] | None:
 
 def _join(tokens: list[str]) -> str:
     return re.sub(r" ([.,!?;:)])", r"\1", " ".join(tokens)).replace("( ", "(")
+
+
+def _noun_answer(answer: str, lemma: str) -> tuple[str | None, str | None]:
+    """The article and plural in an answer such as 'der Termin, die Termine'; None for what wasn't given."""
+    words = re.findall(r"[^\W\d_]+(?:-[^\W\d_]+)*", answer)
+    text = " ".join(words).lower()
+    if not words or text.startswith(("weiß nicht", "weiss nicht")):
+        return None, None
+    article = words[0].lower() if words[0].lower() in ARTICLES else None
+    rest = words[1:] if article else words
+    if rest and rest[0].lower() == lemma.lower():
+        rest = rest[1:]
+    if rest and rest[0].lower() == "die":
+        rest = rest[1:]
+    plural = " ".join(rest) or None
+    if plural and plural.lower().startswith(("weiß nicht", "weiss nicht")):
+        plural = None
+    return article, plural
 
 
 def _tip(exam: dict, part: str) -> str:
@@ -336,6 +357,16 @@ class Engine:
             self.conn.execute("DELETE FROM frequency")
             self.conn.executemany("INSERT INTO frequency (word, rank) VALUES (?, ?)", ranks.items())
         return len(ranks)
+
+    def set_nouns(self, nouns: dict[str, tuple[set[str], list[str]]]) -> int:
+        """Replace the noun lexicon: lemma -> (articles, plurals). Used by scripts/import_nouns.py."""
+        with self.conn:
+            self.conn.execute("DELETE FROM nouns")
+            self.conn.executemany(
+                "INSERT INTO nouns (lemma, articles, plurals) VALUES (?, ?, ?)",
+                [(lemma, ",".join(a for a in ARTICLES if a in articles), "|".join(dict.fromkeys(plurals)))
+                 for lemma, (articles, plurals) in nouns.items() if articles])
+        return self.conn.execute("SELECT COUNT(*) FROM nouns").fetchone()[0]
 
     # Reading ---------------------------------------------------------------
 
@@ -974,6 +1005,118 @@ class Engine:
             result["note"] = "This word was shown or corrected earlier in the session, so this doesn't count yet."
         return result
 
+    def gender_drill(self, session_id: int, count: int = GENDER_DRILL_SIZE) -> dict:
+        """Nouns for the learner to say with article and plural, checked against the noun lexicon.
+
+        The learner's own nouns whose gender isn't known yet: misses first, then those still being learned,
+        then untested ones; nouns not shown in this session come before those that were.
+        """
+        self._open_session(session_id)
+        if not 1 <= count <= 20:
+            raise TutorError("count is 1 to 20.")
+        if not self._has_lexicon():
+            raise TutorError("No noun lexicon is loaded, so there is nothing to check answers against. Skip the "
+                             "drill; the README says how to load one (scripts/import_nouns.py).")
+        picked = self._gender_candidates(session_id)[:count]
+        if not picked:
+            return {"drill_id": None, "items": [],
+                    "message": "No nouns to drill: every noun in the word list has a known gender or isn't in "
+                               "the lexicon."}
+        items = [{"word_id": w["id"], "articles": e[0], "plurals": e[1]} for w, e in picked]
+        with self.conn:
+            drill_id = self.conn.execute("INSERT INTO gender_drills (session_id, at, items) VALUES (?, ?, ?)",
+                                         (session_id, self.now(), json.dumps(items, ensure_ascii=False))).lastrowid
+        return {
+            "drill_id": drill_id,
+            "items": [{"n": n, "noun": w["lemma"], "gloss": w["gloss"]} for n, (w, _) in enumerate(picked, 1)],
+            "instructions": (
+                "Show each noun without its article. The learner answers each straight away with article, noun "
+                "and plural, aloud or typed: der Termin, die Termine. 'kein Plural' for a noun without one, "
+                f"'{DONT_KNOW}' rather than a guess. No hints and no looking up. Send the answers exactly as given, "
+                "in item order, with answer_gender_drill; it scores them against the lexicon."),
+        }
+
+    def answer_gender_drill(self, drill_id: int, answers: list, channel: str = "typed") -> dict:
+        """Score a gender drill against the lexicon: the article as gender evidence for the word, the plural
+        as a noun_plural answer with the noun as trigger."""
+        row = self.conn.execute("SELECT * FROM gender_drills WHERE id = ?", (drill_id,)).fetchone()
+        if row is None:
+            raise TutorError(f"No gender drill {drill_id}. Start one with gender_drill.")
+        session_id = row["session_id"]
+        self._open_session(session_id)
+        if row["answered_at"]:
+            raise TutorError(f"Gender drill {drill_id} is already answered.")
+        if channel not in ("typed", "spoken"):
+            raise TutorError("channel is typed or spoken.")
+        items = json.loads(row["items"])
+        if len(answers) != len(items):
+            raise TutorError(f"Send {len(items)} answers, one per noun, in item order.")
+        seen, now = self._seen_words(session_id), self.now()
+        results, plural_answers, fixed, queued = [], [], [], []
+        with self.conn:
+            for item, answer in zip(items, answers):
+                word = self._word(item["word_id"])
+                answer = " ".join(str(answer).split())
+                article, plural = _noun_answer(answer, word["lemma"])
+                articles, plurals = item["articles"].split(","), item["plurals"]
+                right_article = word["article"] if word["article"] in articles else articles[0]
+                if len(articles) == 1 and word["article"] != right_article:
+                    self.conn.execute("UPDATE words SET article = ? WHERE id = ?", (right_article, word["id"]))
+                    fixed.append(f"{word['lemma']}: {word['article']} -> {right_article}")
+                correct = article in articles
+                self._add_evidence(word["id"], session_id, now, "gender", correct, word["id"] in seen,
+                                   "code:lexicon", answer)
+                right = f"{'/'.join(articles)} {word['lemma']}" + (f", die {plurals[0]}" if plurals else "")
+                result = {"noun": right, "answer": answer,
+                          "article": "right" if correct else "didn't know" if article is None else "wrong",
+                          "plural": "not scored: the lexicon lists none"}
+                if plurals:
+                    plural_right = plural is not None and plural.lower() in (p.lower() for p in plurals)
+                    result["plural"] = "right" if plural_right else "didn't know" if plural is None else "wrong"
+                    plural_answers.append((word, plural, plurals, plural_right, answer, right))
+                if result["article"] != "right" and self._queue_for_anki(word, True, now):
+                    queued.append(self._display(self._word(word["id"])))
+                results.append(result)
+            self.conn.execute("UPDATE gender_drills SET answered_at = ? WHERE id = ?", (now, drill_id))
+        logged: dict = {}
+        for word, plural, plurals, plural_right, answer, right in plural_answers:
+            logged = self.log_attempt(session_id, "noun_plural", "controlled", plural_right, channel=channel,
+                                      trigger=word["lemma"], item=word["lemma"], answer=plural or DONT_KNOW,
+                                      expected=plurals[0], sentence=answer, correction=right, scorer="code:lexicon")
+        again = [r["noun"] for r in results if r["article"] != "right" or r["plural"] in ("wrong", "didn't know")]
+        return {
+            "right": f"{sum(r['article'] == 'right' for r in results)} of {len(results)} articles, "
+                     f"{sum(r['plural'] == 'right' for r in results)} of {len(plural_answers)} plurals",
+            "results": results,
+            **({"article_corrected": fixed} if fixed else {}),
+            "queued_for_anki": queued,
+            "say_again": again,
+            "instructions": "Show the results as one short list. For each noun in `say_again`, the learner says "
+                            "the right form once, then uses it with its article in a short sentence of their own. "
+                            "The answers are already logged: don't log them again.",
+            **({"signals": logged["signals"]} if "signals" in logged else {}),
+        }
+
+    def _has_lexicon(self) -> bool:
+        return self.conn.execute("SELECT 1 FROM nouns LIMIT 1").fetchone() is not None
+
+    def _lexicon(self, lemma: str) -> tuple[str, list[str]] | None:
+        row = self.conn.execute("SELECT articles, plurals FROM nouns WHERE lemma = ?", (lemma,)).fetchone() or \
+            self.conn.execute("SELECT articles, plurals FROM nouns WHERE lemma = ? COLLATE NOCASE", (lemma,)).fetchone()
+        return (row["articles"], [p for p in row["plurals"].split("|") if p]) if row else None
+
+    def _gender_candidates(self, session_id: int) -> list[tuple[sqlite3.Row, tuple[str, list[str]]]]:
+        seen = self._seen_words(session_id)
+        order = {"unknown": 0, "learning": 1, "untested": 2}
+        ranked = []
+        for word in self.conn.execute("SELECT * FROM words WHERE pos = 'noun' ORDER BY id DESC").fetchall():
+            status = self._word_status(word)["gender"]
+            entry = self._lexicon(word["lemma"]) if status != "known" else None
+            if entry:
+                ranked.append(((word["id"] in seen, order[status]), word, entry))
+        ranked.sort(key=lambda r: r[0])
+        return [(word, entry) for _, word, entry in ranked]
+
     def export_anki(self) -> dict:
         """Write today's new cards to files the learner imports.
 
@@ -1324,6 +1467,9 @@ class Engine:
             seen.update(items["glossed"])
             if r["answered_at"]:
                 seen.update(q["word_id"] for q in items["questions"])
+        for r in self.conn.execute(
+                "SELECT items FROM gender_drills WHERE session_id = ? AND answered_at IS NOT NULL", (session_id,)):
+            seen.update(item["word_id"] for item in json.loads(r["items"]))
         seen.update(r[0] for r in self.conn.execute(
             "SELECT word_id FROM word_evidence WHERE session_id = ? AND correct = 0", (session_id,)))
         return seen
@@ -1531,6 +1677,8 @@ class Engine:
                 "Anki first, ideally in the morning, since sleep after learning helps new words stick: words with "
                 "their gender, and spoken chunks answered aloud within about two seconds. "
                 + ("Then two recall prompts for each due construct, from the learner's own sentences. " if due else "")
+                + ("Then a gender drill: call gender_drill and follow it (article, noun and plural, checked "
+                   "against the noun lexicon). " if self._has_lexicon() else "")
                 + "Then the retests in `retests`: the learner's own errors coming back. For each, give a fresh "
                   "prompt that needs the same rule with the same trigger, with familiar words, in the channel it "
                   "went wrong in (spoken: the learner says it), with no hint and no rule talk. Show their old "

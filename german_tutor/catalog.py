@@ -50,6 +50,11 @@ CONSTRUCTS = [
          rule="Most singular nouns need an article (many languages have none). Gender itself is "
               "tracked per noun in the word model (log_word, facet gender) and learned in Anki.",
          example="Ich brauche Deutsch für die Arbeit.", impact=1, relevance=3, treatable=1),
+    dict(id="noun_plural", track="form", stage=0, kind="grammar", name="Noun plurals",
+         rule="The plural is learned with each noun, like its gender: -e (Termine), -en or -n (Firmen), -er "
+              "with umlaut where possible (Fahrräder), -s (Autos), or no ending (Lehrer). The gender drill checks "
+              "it against a noun lexicon, with the noun as trigger.",
+         example="der Termin, die Termine", impact=1, relevance=3, treatable=1),
     dict(id="profession_no_article", track="form", stage=0, kind="grammar",
          name="Jobs after sein: no article, nominative",
          rule="After sein and werden a job takes no article (Ich bin Koch); with an article it is "

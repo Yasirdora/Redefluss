@@ -58,7 +58,8 @@ class McpServerTest(unittest.TestCase):
         names = {t["name"] for t in self.send("tools/list")["result"]["tools"]}
         self.assertEqual(names, {"learner_summary", "start_session", "next_activity", "log_attempt",
                                  "close_session", "get_lesson", "log_measure", "log_sample", "set_unit_status",
-                                 "word_check", "answer_word_check", "show_words", "log_word", "export_anki",
+                                 "word_check", "answer_word_check", "show_words", "log_word", "gender_drill",
+                                 "answer_gender_drill", "export_anki",
                                  "human_brief", "save_profile", "speak"})
 
     def test_unknown_protocol_version_gets_the_latest(self):

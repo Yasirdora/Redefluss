@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import sqlite3
 import tempfile
@@ -8,7 +9,17 @@ from pathlib import Path
 from german_tutor.db import connect
 from german_tutor.engine import FIRST_QUESTIONS, LATER_QUESTIONS, Engine, TutorError
 
-BOOK = Path(__file__).resolve().parent / "fixtures" / "book"  # an invented unit, not a real textbook
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+BOOK = FIXTURES / "book"  # an invented unit, not a real textbook
+NOUNS = FIXTURES / "nouns.csv"  # a few rows in the layout of gambolputty/german-nouns
+
+
+def import_nouns_script():
+    path = Path(__file__).resolve().parent.parent / "scripts" / "import_nouns.py"
+    spec = importlib.util.spec_from_file_location("import_nouns", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class Clock:
@@ -993,6 +1004,85 @@ class ExamTest(EngineTest):
         self.engine.log_measure("mock", 12, 30, part="sprachbausteine", rater="answer_key")
         started = self.new_session(days=2)  # day 3, no writing
         self.assertEqual(self.blocks(started)["focus"], 30)
+
+
+class GenderDrillTest(EngineTest):
+    """Article, noun and plural, checked against a noun lexicon instead of the tutor model's memory."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.set_nouns(import_nouns_script().read_nouns(NOUNS))
+        self.engine.show_words(self.session, [
+            {"lemma": "Termin", "pos": "noun", "article": "der", "gloss": "appointment"},
+            {"lemma": "Firma", "pos": "noun", "article": "der", "gloss": "company"},  # stored wrong
+            {"lemma": "Joghurt", "pos": "noun", "article": "das", "gloss": "yoghurt"},
+            {"lemma": "Obst", "pos": "noun", "article": "das", "gloss": "fruit"},
+            {"lemma": "Bewerbungsmappe", "pos": "noun", "article": "die", "gloss": "application folder"},
+            {"lemma": "gehen", "pos": "verb", "gloss": "to go"},
+        ])
+        self.new_session()
+
+    def drill(self, **answers):
+        drill = self.engine.gender_drill(self.session)
+        return self.engine.answer_gender_drill(drill["drill_id"], [answers[i["noun"]] for i in drill["items"]])
+
+    def test_the_import_keeps_every_gender_and_plural_and_skips_names(self):
+        nouns = import_nouns_script().read_nouns(NOUNS)
+        self.assertEqual(nouns["See"], ({"der", "die"}, ["Seen"]))
+        self.assertEqual(nouns["Joghurt"], ({"der", "das"}, ["Joghurts", "Joghurt"]))
+        self.assertEqual(nouns["Obst"], ({"das"}, []))
+        self.assertNotIn("Müller", nouns)
+
+    def test_only_nouns_in_the_lexicon_with_an_unsettled_gender_are_drilled(self):
+        drill = self.engine.gender_drill(self.session)
+        self.assertEqual({i["noun"] for i in drill["items"]}, {"Termin", "Firma", "Joghurt", "Obst"})
+        self.assertIn("without its article", drill["instructions"])
+        for _ in range(2):  # right on two days: known
+            self.engine.log_word(self.session, "Termin", "gender", True)
+            self.new_session()
+        self.assertNotIn("Termin", {i["noun"] for i in self.engine.gender_drill(self.session)["items"]})
+
+    def test_missed_genders_come_first_and_nouns_shown_today_last(self):
+        self.engine.log_word(self.session, "Firma", "gender", False, answer="der Firma")
+        self.assertEqual(self.engine.gender_drill(self.session)["items"][-1]["noun"], "Firma")  # shown today
+        self.new_session()
+        self.assertEqual(self.engine.gender_drill(self.session)["items"][0]["noun"], "Firma")
+
+    def test_articles_and_plurals_are_scored_against_the_lexicon(self):
+        result = self.drill(Termin="der Termin, die Termine", Firma="die Firma, die Firmas",
+                            Joghurt="das Joghurt - Joghurts", Obst="das Obst, kein Plural")
+        self.assertEqual(result["right"], "4 of 4 articles, 2 of 3 plurals")
+        self.assertEqual(result["article_corrected"], ["Firma: der -> die"])
+        self.assertEqual(result["say_again"], ["die Firma, die Firmen"])
+        self.assertEqual(self.engine.learner_summary()["patterns"]["top"][0]["trigger"], "firma")
+        plurals = self.engine.conn.execute(
+            "SELECT COUNT(*), SUM(correct) FROM attempts WHERE construct_id = 'noun_plural' AND scorer = 'code:lexicon'"
+        ).fetchone()
+        self.assertEqual(tuple(plurals), (3, 2))
+        evidence = self.engine.conn.execute(
+            "SELECT COUNT(*) FROM word_evidence WHERE facet = 'gender' AND scorer = 'code:lexicon' AND correct = 1"
+        ).fetchone()[0]
+        self.assertEqual(evidence, 4)
+
+    def test_a_wrong_or_unknown_article_is_a_miss_and_goes_to_anki(self):
+        result = self.drill(Termin="die Termin, die Termine", Firma="weiß nicht", Joghurt="der Joghurt, Joghurts",
+                            Obst="das Obst")
+        articles = {r["noun"].split(",")[0]: r["article"] for r in result["results"]}
+        self.assertEqual(articles["der Termin"], "wrong")
+        self.assertEqual(articles["die Firma"], "didn't know")
+        self.assertEqual(set(result["queued_for_anki"]), {"der Termin", "die Firma"})
+        with self.assertRaisesRegex(TutorError, "already answered"):
+            self.engine.answer_gender_drill(1, ["x"] * 4)
+
+    def test_without_a_lexicon_there_is_no_drill(self):
+        review = next(b for b in iter(lambda: self.engine.next_activity(self.session), None) if b["type"] == "review")
+        self.assertIn("gender_drill", review["instructions"])
+        self.engine.set_nouns({})
+        with self.assertRaisesRegex(TutorError, "No noun lexicon"):
+            self.engine.gender_drill(self.session)
+        self.new_session()
+        review = next(b for b in iter(lambda: self.engine.next_activity(self.session), None) if b["type"] == "review")
+        self.assertNotIn("gender_drill", review["instructions"])
 
 
 class MigrationTest(unittest.TestCase):
