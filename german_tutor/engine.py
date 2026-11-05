@@ -34,8 +34,10 @@ Every public method returns plain dicts. Refusals raise TutorError with how to f
 """
 from __future__ import annotations
 
+import difflib
 import json
 import random
+import re
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -160,8 +162,34 @@ CHECK_SIZE = 6
 COMMON_RANK = 10000  # in a word-form frequency list, which ranks lemmas lower than a lemma list would
 TEACH_MAX = 2
 ANKI_PER_DAY = 5
+# Sentence cards from the learner's own corrected errors [J], on top of the new words: the corrected sentence
+# with the changed words gapped and the learner's own words as the hint. One card per open pattern, and only
+# for a short, targeted fix: a rewritten sentence makes a poor card.
+ERROR_CARDS_PER_DAY = 5
+ERROR_CARD_MAX_WORDS = 25
+ERROR_CARD_MAX_GAP = 5
+GAP = "___"
+TOKEN = re.compile(r"[\w'-]+|[^\w\s]")
 LETTERS = "ABCDE"
 DONT_KNOW = "weiß nicht"
+
+
+def _cloze(sentence: str, correction: str) -> tuple[str, list[str]] | None:
+    """The correction with the changed words gapped, and the learner's words there; None if it makes no card."""
+    wrong, right = TOKEN.findall(sentence or ""), TOKEN.findall(correction or "")
+    if wrong == right or len(right) > ERROR_CARD_MAX_WORDS:
+        return None
+    changes = [op for op in difflib.SequenceMatcher(a=wrong, b=right, autojunk=False).get_opcodes()
+               if op[0] != "equal"]
+    a1, a2, b1, b2 = changes[0][1], changes[-1][2], changes[0][3], changes[-1][4]
+    gap = b2 - b1
+    if gap == 0 or gap > ERROR_CARD_MAX_GAP or 2 * gap > len(right):
+        return None
+    return _join(right[:b1] + [GAP] + right[b2:]), wrong[a1:a2]
+
+
+def _join(tokens: list[str]) -> str:
+    return re.sub(r" ([.,!?;:)])", r"\1", " ".join(tokens)).replace("( ", "(")
 
 
 def _tip(exam: dict, part: str) -> str:
@@ -947,34 +975,83 @@ class Engine:
         return result
 
     def export_anki(self) -> dict:
-        """Write the words queued for Anki to a file the learner imports; at most ANKI_PER_DAY a day."""
+        """Write today's new cards to files the learner imports.
+
+        Words queued for Anki, at most ANKI_PER_DAY a day, and sentence cards from the learner's own corrected
+        errors, at most ERROR_CARDS_PER_DAY a day.
+        """
         if self.export_dir is None:
             raise TutorError("No export folder: this engine runs on an in-memory database.")
+        words, waiting = self._anki_words()
+        cards = self._error_cards()
+        result = {"exported": len(words), "left_in_queue": len(waiting) - len(words), "sentence_cards": len(cards)}
+        if not words and not cards:
+            result["message"] = (f"Today's {ANKI_PER_DAY} new cards are already exported; the rest wait for "
+                                 "tomorrow." if waiting else "No words or corrected sentences are waiting for Anki.")
+            return result
+        stamp, now, instructions = f"{self.clock():%Y-%m-%d-%H%M%S}", self.now(), []
+        if words:
+            result["file"] = str(self._write_cards(f"german-tutor-{stamp}.tsv", [
+                (self._display(w), w["gloss"] + (f" | {w['example']}" if w["example"] else ""),
+                 "german-tutor" + (" " + "_".join(w["source"].split()) if w["source"] else "")) for w in words]))
+            instructions.append("Ask the learner to import the file in Anki (File > Import) into their German deck "
+                                "with the note type 'Basic (and reversed card)', so each word is practised from "
+                                "German and from English, article included.")
+        if cards:
+            result["sentence_file"] = str(self._write_cards(f"german-tutor-sentences-{stamp}.tsv", [
+                (c["front"], c["back"], c["tags"]) for c in cards]))
+            instructions.append("Import the sentence file into the same deck with the note type 'Basic', one way "
+                                "only: each card is one of their own sentences, corrected, with the changed words "
+                                "gapped and their own words as the hint. They say the whole sentence aloud, then "
+                                "turn the card.")
+        with self.conn:
+            self.conn.executemany("UPDATE words SET anki_exported_at = ? WHERE id = ?", [(now, w["id"]) for w in words])
+            self.conn.executemany("UPDATE errors SET anki_exported_at = ? WHERE id = ?",
+                                  [(now, c["error_id"]) for c in cards])
+        result["instructions"] = " ".join(instructions)
+        return result
+
+    def _anki_words(self) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+        """Today's batch of queued words, and all words waiting."""
         done_today = self.conn.execute("SELECT COUNT(*) FROM words WHERE anki_exported_at >= ?",
                                        (self.today().isoformat(),)).fetchone()[0]
         waiting = self.conn.execute(
             """SELECT * FROM words WHERE anki_queued_at IS NOT NULL AND anki_exported_at IS NULL
                ORDER BY anki_queued_at, id""").fetchall()
-        batch = waiting[:max(0, ANKI_PER_DAY - done_today)]
-        if not batch:
-            return {"exported": 0, "left_in_queue": len(waiting),
-                    "message": f"Today's {ANKI_PER_DAY} new cards are already exported; the rest wait for tomorrow."
-                    if waiting else "No words are waiting for Anki."}
+        return waiting[:max(0, ANKI_PER_DAY - done_today)], waiting
+
+    def _error_cards(self) -> list[dict]:
+        """Sentence cards for today: the latest fit error of each open pattern with no card yet, recurring first."""
+        done_today = self.conn.execute("SELECT COUNT(*) FROM errors WHERE anki_exported_at >= ?",
+                                       (self.today().isoformat(),)).fetchone()[0]
+        room = max(0, ERROR_CARDS_PER_DAY - done_today)
+        cards, patterns = [], set()
+        for e in self.conn.execute(
+                """SELECT e.id, e.sentence, e.correction, e.pattern_id, e.construct_id, c.name FROM errors e
+                   JOIN patterns p ON p.id = e.pattern_id JOIN constructs c ON c.id = e.construct_id
+                   WHERE p.resolved_at IS NULL AND NOT EXISTS (
+                       SELECT 1 FROM errors x WHERE x.pattern_id = e.pattern_id AND x.anki_exported_at IS NOT NULL)
+                   ORDER BY (SELECT COUNT(DISTINCT substr(x.at, 1, 10)) FROM errors x
+                             WHERE x.pattern_id = e.pattern_id) DESC, e.at DESC, e.id DESC"""):
+            if len(cards) == room:
+                break
+            cloze = None if e["pattern_id"] in patterns else _cloze(e["sentence"], e["correction"])
+            if cloze is None:
+                continue
+            patterns.add(e["pattern_id"])
+            gapped, theirs = cloze
+            cards.append({"error_id": e["id"],
+                          "front": gapped + (f" ({' / '.join(theirs)})" if theirs else "") + f" · {e['name']}",
+                          "back": e["correction"], "tags": f"german-tutor error {e['construct_id']}"})
+        return cards
+
+    def _write_cards(self, name: str, rows: list[tuple[str, str, str]]) -> Path:
         lines = ["#separator:tab", "#html:false", "#tags column:3"]
-        for w in batch:
-            back = w["gloss"] + (f" | {w['example']}" if w["example"] else "")
-            tags = "german-tutor" + (" " + "_".join(w["source"].split()) if w["source"] else "")
-            lines.append("\t".join(" ".join(str(field).split()) for field in (self._display(w), back, tags)))
+        lines += ["\t".join(" ".join(str(field).split()) for field in row) for row in rows]
         self.export_dir.mkdir(parents=True, exist_ok=True)
-        path = self.export_dir / f"german-tutor-{self.clock():%Y-%m-%d-%H%M%S}.tsv"
+        path = self.export_dir / name
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        now = self.now()
-        with self.conn:
-            self.conn.executemany("UPDATE words SET anki_exported_at = ? WHERE id = ?", [(now, w["id"]) for w in batch])
-        return {"exported": len(batch), "file": str(path), "left_in_queue": len(waiting) - len(batch),
-                "instructions": "Ask the learner to import the file in Anki (File > Import) into their German deck "
-                                "with the note type 'Basic (and reversed card)', so each word is practised from "
-                                "German and from English, article included."}
+        return path
 
     # Internals ---------------------------------------------------------------
 
@@ -1620,8 +1697,8 @@ class Engine:
                 "session, ask what happened, what was hard, and log any error they remember with its trigger."))
         else:
             block.update(title="Close", constructs=[], instructions=(
-                "Log anything not yet logged. Call export_anki and give the learner the file to import, if there is "
-                "one. Ask for a one-sentence teach-back of today's main point, then call close_session with the "
+                "Log anything not yet logged. Call export_anki and give the learner the files to import, if there "
+                "are any. Ask for a one-sentence teach-back of today's main point, then call close_session with the "
                 "learner's effort rating from 1 to 5."))
         return block
 

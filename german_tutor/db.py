@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS errors (
     sentence     TEXT,
     correction   TEXT,
     cause        TEXT,                  -- hypothesis; for listening and reading misses, one of a fixed set
-    pattern_id   INTEGER REFERENCES patterns(id)
+    pattern_id   INTEGER REFERENCES patterns(id),
+    anki_exported_at TEXT               -- when it went to Anki as a sentence card
 );
 CREATE TABLE IF NOT EXISTS words (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +158,7 @@ ADDED_COLUMNS = [
     ("attempts", "retest_of", "INTEGER REFERENCES patterns(id)"),
     ("errors", "pattern_id", "INTEGER REFERENCES patterns(id)"),
     ("attempts", "reason", "TEXT"),
+    ("errors", "anki_exported_at", "TEXT"),
 ]
 
 

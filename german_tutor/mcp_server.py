@@ -269,7 +269,8 @@ TOOLS = [
            "answer": {"type": "string", "description": "What the learner said or wrote, e.g. 'der Tür'."},
            "example": {"type": "string"}},
           ("session_id", "lemma", "facet", "correct")),
-    _tool("export_anki", "Write the words waiting for Anki (at most 5 new a day) to a file the learner imports."),
+    _tool("export_anki", "Write today's new Anki cards to files the learner imports: words (at most 5 new a day) "
+                         "and sentence cards from their own corrected errors (at most 5)."),
     _tool("human_brief", "A brief for the weekly lesson with a human tutor: the format, the mistakes to listen "
                          "for, the structures to steer towards, stored speech to rate blind, your recent "
                          "corrections to audit, and a sentence-repetition test when one is due. Give it to the "

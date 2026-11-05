@@ -729,6 +729,35 @@ class WordTest(EngineTest):
         self.clock.advance(days=1)
         self.assertEqual(self.engine.export_anki()["exported"], 2)
 
+    def test_corrected_errors_become_sentence_cards_one_per_pattern(self):
+        self.log(correct=False, sentence="Deswegen ich kann nicht.", correction="Deswegen kann ich nicht.")
+        self.log(correct=False, sentence="Deswegen ich fahre nach Berlin.", correction="Deswegen fahre ich nach Berlin.")
+        self.log("verb_final_subclause", correct=False, trigger="weil", sentence="Ich bleibe hier, weil ich habe "
+                 "keine Zeit.", correction="Ich bleibe hier, weil ich keine Zeit habe.")
+        self.log("verb_conjugation", correct=False, trigger="fahren", sentence="Er fahrt.", correction="Er fährt.")
+        self.log("kein_negation", correct=False, trigger="Zeit", sentence="Ich habe nicht Zeit heute",
+                 correction="Heute habe ich keine Zeit für so etwas")  # a rewrite: no card
+        result = self.engine.export_anki()
+        self.assertEqual((result["exported"], result["sentence_cards"]), (0, 3))
+        lines = Path(result["sentence_file"]).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(lines[3], "Er ___. (fahrt) · Present-tense verb endings\tEr fährt.\t"
+                                   "german-tutor error verb_conjugation")  # the latest first
+        self.assertTrue(lines[4].startswith("Ich bleibe hier, weil ich ___. (habe / keine / Zeit)"))
+        self.assertEqual(lines[5], "Deswegen ___ nach Berlin. (ich / fahre) · Verb second in main clauses\t"
+                                   "Deswegen fahre ich nach Berlin.\tgerman-tutor error v2_word_order")
+        self.assertIn("'Basic', one way only", result["instructions"])
+        self.log(correct=False, sentence="Deswegen ich gehe.", correction="Deswegen gehe ich.")
+        self.assertEqual(self.engine.export_anki()["sentence_cards"], 0)  # that pattern has its card
+
+    def test_sentence_cards_are_capped_per_day(self):
+        for word in ("Deswegen", "Dann", "Morgen", "Heute", "Danach", "Jetzt", "Oft"):
+            self.log(correct=False, trigger=word, sentence=f"{word} ich gehe nach Hause.",
+                     correction=f"{word} gehe ich nach Hause.")
+        self.assertEqual(self.engine.export_anki()["sentence_cards"], 5)
+        self.assertEqual(self.engine.export_anki()["sentence_cards"], 0)
+        self.clock.advance(days=1)
+        self.assertEqual(self.engine.export_anki()["sentence_cards"], 2)
+
     def test_a_rare_word_reaches_anki_only_after_misses_on_two_days(self):
         self.engine.log_word(self.session, "Zitronenfalter", "meaning", False, pos="noun", article="der",
                              gloss="brimstone butterfly")
@@ -980,7 +1009,8 @@ class MigrationTest(unittest.TestCase):
             old.close()
             conn = connect(path)
             self.assertIn("trigger", {r["name"] for r in conn.execute("PRAGMA table_info(attempts)")})
-            self.assertIn("pattern_id", {r["name"] for r in conn.execute("PRAGMA table_info(errors)")})
+            self.assertTrue({"pattern_id", "anki_exported_at"}
+                            <= {r["name"] for r in conn.execute("PRAGMA table_info(errors)")})
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM attempts").fetchone()[0], 1)
             conn.close()
 
