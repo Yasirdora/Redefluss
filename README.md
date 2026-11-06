@@ -1,12 +1,12 @@
 # Redefluss
 
-*Redefluss* is German for "flow of speech". It is a small engine behind an AI German tutor for adults working from about A2 towards B2: confident speaking and listening first, with an exam such as the Goethe-Zertifikat B2 as a checkpoint.
+*Redefluss* is German for "flow of speech". It is a small engine behind an AI German tutor for adults working from about A2 towards B2: confident speaking and listening first, with a B2 exam (Goethe-Zertifikat, telc Deutsch or the DTB) as a checkpoint.
 
 **The model teaches, code keeps score, tools verify.** Any chat app that speaks the Model Context Protocol (MCP) can be the tutor: Claude Desktop, Claude Code, ChatGPT developer mode, Gemini CLI, Google Antigravity and others. The engine decides what to practise and keeps an honest record of what happened, so the tutor can't flatter you or forget your mistakes.
 
 It runs on the stock macOS Python 3.9, uses only the standard library and has no dependencies. Your learner record stays in one SQLite file on your computer; the lessons themselves go through the AI app you connect, and so to its provider.
 
-> **Disclaimer.** Redefluss is unofficial and experimental, and not affiliated with the Goethe-Institut or any exam provider. AI feedback can be wrong, its marks are estimates, and nothing here guarantees an exam result. See [DISCLAIMER.md](DISCLAIMER.md).
+> **Disclaimer.** Redefluss is unofficial and experimental, and not affiliated with the Goethe-Institut, telc, the BAMF or any other exam provider. AI feedback can be wrong, its marks are estimates, and nothing here guarantees an exam result. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Getting started
 
@@ -92,7 +92,7 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
 | `log_attempt` | One judged answer for one construct, with channel, repair, certainty, the trigger word and the learner's reason when asked; updates mastery, records error patterns and retests, and returns signals |
 | `close_session` | Refuses until every judged answer is logged, then writes the summary, including planned targets that were never tested and errors logged as slips |
 | `get_lesson` | A book unit by id or page, with answer keys and their verification status |
-| `log_measure` | Mock-exam modules (with who rated them), C-test, onSET, LexTALE, fluency, pronunciation, human ratings of stored samples, sentence repetition, and a human's audit of the tutor's corrections |
+| `log_measure` | Mock-exam parts of the learner's exam (with who rated them), timed writing scores, C-test, onSET, LexTALE, fluency, pronunciation, human ratings of stored samples, sentence repetition, and a human's audit of the tutor's corrections |
 | `log_sample` | Stores the learner's own speech transcripts and writing, uncorrected, for re-scoring and rating later |
 | `set_unit_status` | Marks a book unit new, in progress or done |
 | `word_check` | Takes up to 15 candidate words, skips known ones, and returns multiple-choice items it scores itself, plus words only to gloss |
@@ -133,20 +133,23 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
   - A facet is known after unprimed evidence on 2 different days since its last miss. A word shown, glossed or corrected earlier in a session counts as primed for the rest of it.
   - The tutor model may record misses and uses, but never that a meaning is known: understanding a text doesn't prove each word.
   - A word check tests up to 6 words by multiple choice with a "weiß nicht" option, plus the gender of each noun not yet known. The engine holds the key and scores the letters. Gender only counts when the meaning was right.
-  - With a noun lexicon loaded, the review block has a gender drill: the learner says article, noun and plural (der Termin, die Termine) for their own nouns whose gender isn't known, missed ones first. The lexicon scores it, so the model's memory of der, die or das never decides. Nouns with two genders (der or das Joghurt) accept both.
   - It tests words the task needs, however rare: needed common words first, then the other needed words, then common words the task doesn't need (within the top 10,000 of the frequency list). Other words are only glossed. A subtitle list ranks work words like Bewerbung low, so marking a word as needed is what counts.
+  - With a noun lexicon loaded, the review block has a gender drill: the learner says article, noun and plural (der Termin, die Termine) for their own nouns whose gender isn't known, missed ones first. The lexicon scores it, so the model's memory of der, die or das never decides. Nouns with two genders (der or das Joghurt) accept both.
   - At most 2 missed words are taught on the spot; the rest are glossed. A missed word goes to Anki if the task needed it, it is common, or it was missed on 2 days, with at most 5 new cards a day. Anki keeps the review schedule.
   - With the Anki link, Anki's record counts: a word whose cards reach a 21-day interval is settled and leaves word checks, and a word forgotten 4 times or more is flagged to be taught another way.
   - Errors become Anki cards too, at most 5 a day: the learner's own sentence, corrected, with the changed words gapped and their words as the hint (`Deswegen ___ nach Berlin. (ich / fahre)`). One card per open pattern, and none for a rewritten sentence.
   - No word check before listening or exam-format practice: a topic preview comes before listening, and unknown words are collected afterwards.
+- **The exam is the learner's own.** Goethe-Zertifikat B2, telc Deutsch B2 and the DTB B2 (the exam at the end of a BAMF job course) are described in `data/exams/`, each with its sources: parts and points, pass and retake rules, gates, and what exam-format reading, listening, writing and speaking look like. The engine reads the exam from the learner's own words ("telc", "the BAMF course") and the tutor confirms it with them. When the words fit none or several, or another level, it asks; until then, and without an exam, practice is general B2.
 - **The day:** review 20, book lesson 30, speaking 50, input 40, focus drills 20, a real conversation away from the desk 15, close 5 minutes, scaled to the session length.
+  - Twice a week a timed writing block replaces the focus drills: the exam's own task and time, plus 10 minutes of feedback (content first, then the exam's scoring rules, then at most two errors and one rewritten paragraph). The minutes come from the focus block, then from speaking, input and the book lesson, each keeping at least half. A task that doesn't fit gives way to a shorter one; minimum days have none. The text is stored before any feedback, and the estimated score is logged as `writing_task`.
+  - Once a week the speaking task is one part of the exam's speaking test, and for telc and the DTB one part of Sprachbausteine practice joins the focus block.
   - A session is at least 15 minutes. Under 45 minutes the plan is only review, speaking and the close, so a 20-minute minimum day still counts.
   - Anki reviews go first, ideally in the morning; new words go later in the day, since sleep after learning helps them stick.
-- **Input rotation:** by day number, 1 reading day and 1 exam-format listening day a week, and narrow listening on the other days. Reading gets a second day while it is the weakest of at least two rated mock modules. Listening ends by listening again while reading the transcript and writing down a short stretch word for word. A 5-minute numbers, times and dates drill opens the block until that construct reaches level 3.
+- **Input rotation:** by day number, 1 reading day and 1 exam-format listening day a week, and narrow listening on the other days. Reading gets a second day while it is the weakest of at least two rated mock parts. Narrow listening keeps the same speakers for weeks; once a week it uses speakers the learner hasn't heard (another podcast, a regional accent, several voices). Listening ends with a listen while reading the transcript, a short stretch written down word for word, and one last listen without the transcript. A 5-minute numbers, times and dates drill opens the block until that construct reaches level 3.
 - **Checks fall due:** a C-test (or onSET) every 30 days and a sentence-repetition test every 14; `learner_summary` lists the ones due. The sentence-repetition test has two forms of 12 sentences in `data/measures/`.
-- **Exam gates** at days 90, 120 and 140 compare mock-exam scores with the pass mark plus a buffer. Only mocks rated by an answer key or a human count.
+- **Exam gates** at days 90, 120 and 140 compare mock scores with the pass mark plus a buffer, by the learner's exam's own rules: each part for Goethe, the written and oral exams for telc, the total and each skill for the DTB. Only mocks rated by an answer key or a human count.
 - **Breaks:** a 5-minute break after 50 minutes of work, a stop when the planned minutes and their breaks are used up (195 for a full day), and an effort check when hint use rises within a block.
-- **Rebalancing:** up to 10 minutes move from the strongest mock-exam module's block to the weakest's, and speaking never gives minutes away.
+- **Rebalancing:** up to 10 minutes move from the strongest mock-exam part's block to the weakest's, and speaking never gives minutes away.
 - **Every session records the engine version,** so data logged under different rules can be told apart. Opening an older database upgrades it in place: missing tables and columns are added, and nothing is deleted.
 
 The thresholds are judgments, marked [J] in the code; the constants at the top of `german_tutor/engine.py` hold them. The design was revised several times after critiques by other AI models and research on how adults learn languages: task repetition, prompts rather than recasts, spaced retrieval, self-explanation, and human ratings as the check on the AI.
@@ -154,15 +157,17 @@ The thresholds are judgments, marked [J] in the code; the constants at the top o
 ## Layout
 
 ```
-german_tutor/   db.py (schema), catalog.py (constructs, day plan, gates), engine.py, mcp_server.py
+german_tutor/   db.py (schema), catalog.py (constructs, day plan), exams.py, engine.py, mcp_server.py,
+                anki.py (the Anki link), checker.py (check_text)
 server.py       starts the MCP server
+data/exams/     the B2 exam formats: Goethe, telc, DTB and general practice, with sources
 data/measures/  the sentence-repetition test, two forms of 12 sentences
 data/book/      your textbook units, one JSON file per unit (git-ignored)
 data/frequency/ an optional frequency list (git-ignored)
 data/nouns/     an optional noun lexicon (git-ignored)
 data/private/   tutor.db, Anki exports (git-ignored)
 scripts/        init_db.py, import_frequency.py, import_nouns.py, export_rules.py
-tests/          engine and MCP protocol tests, with an invented book unit in fixtures/
+tests/          engine, MCP protocol, Anki link and checker tests, with an invented book unit and a few lexicon rows in fixtures/
 ```
 
 `scripts/init_db.py` sets up a database by hand: it loads the catalog and book units, a profile from `data/private/profile.json` if there is one (see `data/profile.example.json`), and past sessions saved as JSON. You don't need it for a normal start: the server does the same on its own, and the interview replaces the profile file.
