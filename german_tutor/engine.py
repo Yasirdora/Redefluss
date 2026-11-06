@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import __version__, catalog, exams
+from .anki import SENTENCE_MODEL, WORD_MODEL, AnkiConnect, AnkiError
 from .db import connect, db_path
 
 BOOK_DIR = Path(__file__).resolve().parent.parent / "data" / "book"
@@ -165,6 +166,10 @@ ANKI_PER_DAY = 5
 # The gender drill [J]: the learner produces article, noun and plural (der Termin, die Termine) for nouns
 # whose gender isn't settled, scored against a noun lexicon rather than the tutor model's memory.
 GENDER_DRILL_SIZE = 8
+# With the Anki link (AnkiConnect), Anki's own record counts: a word whose cards have reached an interval of
+# three weeks is settled and not checked again, and one forgotten 4 times needs teaching another way.
+ANKI_SETTLED_DAYS = 21
+ANKI_STRUGGLING_LAPSES = 4
 # Sentence cards from the learner's own corrected errors [J], on top of the new words: the corrected sentence
 # with the changed words gapped and the learner's own words as the hint. One card per open pattern, and only
 # for a short, targeted fix: a rewritten sentence makes a poor card.
@@ -225,10 +230,11 @@ class TutorError(ValueError):
 
 class Engine:
     def __init__(self, db: str | Path | None = None, clock: Callable[[], datetime] = datetime.now,
-                 export_dir: str | Path | None = None):
+                 export_dir: str | Path | None = None, anki: AnkiConnect | None = None):
         path = db_path(db)
         self.conn = connect(path)
         self.clock = clock
+        self.anki = anki  # the optional link to Anki; without it, cards go out as files
         # Anki files go next to the database unless told otherwise; an in-memory database has no folder.
         self.export_dir = Path(export_dir) if export_dir else (
             None if path == ":memory:" else Path(path).parent / "anki")
@@ -853,7 +859,7 @@ class Engine:
             for order, w in enumerate(candidates):
                 word = self._upsert_word(w, source, now)
                 status = self._word_status(word)
-                if status["meaning"] == "known":
+                if status["meaning"] == "known" or (word["anki_interval"] or 0) >= ANKI_SETTLED_DAYS:
                     known.append(self._display(word))
                     continue
                 rank = self._rank(word["lemma"])
@@ -1118,13 +1124,12 @@ class Engine:
         return [(word, entry) for _, word, entry in ranked]
 
     def export_anki(self) -> dict:
-        """Write today's new cards to files the learner imports.
+        """Send today's new cards to Anki: straight into the deck when Anki is open with AnkiConnect, otherwise
+        as files the learner imports.
 
         Words queued for Anki, at most ANKI_PER_DAY a day, and sentence cards from the learner's own corrected
         errors, at most ERROR_CARDS_PER_DAY a day.
         """
-        if self.export_dir is None:
-            raise TutorError("No export folder: this engine runs on an in-memory database.")
         words, waiting = self._anki_words()
         cards = self._error_cards()
         result = {"exported": len(words), "left_in_queue": len(waiting) - len(words), "sentence_cards": len(cards)}
@@ -1132,27 +1137,85 @@ class Engine:
             result["message"] = (f"Today's {ANKI_PER_DAY} new cards are already exported; the rest wait for "
                                  "tomorrow." if waiting else "No words or corrected sentences are waiting for Anki.")
             return result
+        rows = {"word": [(self._display(w), w["gloss"] + (f" | {w['example']}" if w["example"] else ""),
+                          "german-tutor" + (" " + "_".join(w["source"].split()) if w["source"] else ""))
+                         for w in words],
+                "sentence": [(c["front"], c["back"], c["tags"]) for c in cards]}
+        added: dict[str, list[int | None]] = {}
+        if self.anki is not None:
+            try:
+                for kind, model in (("word", WORD_MODEL), ("sentence", SENTENCE_MODEL)):
+                    if rows[kind]:
+                        added[kind] = self.anki.add_notes(model, [(f, b, t.split()) for f, b, t in rows[kind]])
+            except AnkiError as e:
+                result["anki_error"] = f"{e} Files to import instead."
+        to_file = [kind for kind in rows if rows[kind] and kind not in added]
+        if to_file and self.export_dir is None:
+            raise TutorError("No export folder: this engine runs on an in-memory database.")
         stamp, now, instructions = f"{self.clock():%Y-%m-%d-%H%M%S}", self.now(), []
-        if words:
-            result["file"] = str(self._write_cards(f"german-tutor-{stamp}.tsv", [
-                (self._display(w), w["gloss"] + (f" | {w['example']}" if w["example"] else ""),
-                 "german-tutor" + (" " + "_".join(w["source"].split()) if w["source"] else "")) for w in words]))
+        if added:
+            result["added_to_anki"] = sum(i is not None for ids in added.values() for i in ids)
+            instructions.append(f"Today's new cards are in the Anki deck '{self.anki.deck}' already: nothing to "
+                                "import. Words have a card each way; sentence cards are one of the learner's own "
+                                "sentences, corrected, with the changed words gapped and their words as the hint: "
+                                "they say the whole sentence aloud, then turn the card.")
+            already = [rows[kind][n][0] for kind, ids in added.items() for n, i in enumerate(ids) if i is None]
+            if already:
+                result["already_in_anki"] = already
+        if "word" in to_file:
+            result["file"] = str(self._write_cards(f"german-tutor-{stamp}.tsv", rows["word"]))
             instructions.append("Ask the learner to import the file in Anki (File > Import) into their German deck "
                                 "with the note type 'Basic (and reversed card)', so each word is practised from "
                                 "German and from English, article included.")
-        if cards:
-            result["sentence_file"] = str(self._write_cards(f"german-tutor-sentences-{stamp}.tsv", [
-                (c["front"], c["back"], c["tags"]) for c in cards]))
+        if "sentence" in to_file:
+            result["sentence_file"] = str(self._write_cards(f"german-tutor-sentences-{stamp}.tsv", rows["sentence"]))
             instructions.append("Import the sentence file into the same deck with the note type 'Basic', one way "
                                 "only: each card is one of their own sentences, corrected, with the changed words "
                                 "gapped and their own words as the hint. They say the whole sentence aloud, then "
                                 "turn the card.")
+        word_ids = added.get("word", [None] * len(words))
+        card_ids = added.get("sentence", [None] * len(cards))
         with self.conn:
-            self.conn.executemany("UPDATE words SET anki_exported_at = ? WHERE id = ?", [(now, w["id"]) for w in words])
-            self.conn.executemany("UPDATE errors SET anki_exported_at = ? WHERE id = ?",
-                                  [(now, c["error_id"]) for c in cards])
+            self.conn.executemany("UPDATE words SET anki_exported_at = ?, anki_note_id = ? WHERE id = ?",
+                                  [(now, i, w["id"]) for w, i in zip(words, word_ids)])
+            self.conn.executemany("UPDATE errors SET anki_exported_at = ?, anki_note_id = ? WHERE id = ?",
+                                  [(now, i, c["error_id"]) for c, i in zip(cards, card_ids)])
         result["instructions"] = " ".join(instructions)
         return result
+
+    def sync_anki(self) -> dict:
+        """Read how the learner's word cards are going in Anki (interval and lapses), through AnkiConnect.
+
+        Only cards Redefluss added itself are read; cards imported from files carry no link back.
+        """
+        if self.anki is None:
+            return {"linked": False, "message": "The Anki link is off (GERMAN_TUTOR_ANKI=off): carry on without it."}
+        rows = self.conn.execute("SELECT * FROM words WHERE anki_note_id IS NOT NULL").fetchall()
+        try:
+            stats = self.anki.card_stats([r["anki_note_id"] for r in rows])
+        except AnkiError as e:
+            return {"linked": False, "message": f"{e} Carry on without it."}
+        now = self.now()
+        with self.conn:
+            self.conn.executemany(
+                "UPDATE words SET anki_interval = ?, anki_lapses = ?, anki_checked_at = ? WHERE id = ?",
+                [(stats[r["anki_note_id"]]["interval"], stats[r["anki_note_id"]]["lapses"], now, r["id"])
+                 for r in rows if r["anki_note_id"] in stats])
+        rows = [self._word(r["id"]) for r in rows if r["anki_note_id"] in stats]
+        struggling = [f"{self._display(r)} = {r['gloss']} ({r['anki_lapses']} lapses)" for r in rows
+                      if r["anki_lapses"] >= ANKI_STRUGGLING_LAPSES]
+        return {
+            "linked": True,
+            "words_read": len(rows),
+            "settled": sum(r["anki_interval"] >= ANKI_SETTLED_DAYS for r in rows),
+            "struggling": struggling,
+            "instructions": (
+                f"Words settled in Anki (an interval of {ANKI_SETTLED_DAYS} days or more) are no longer checked in "
+                "word checks. " + (
+                    "Each struggling word keeps being forgotten in Anki: teach it another way today, in a sentence "
+                    "of the learner's own, a contrast with a word it gets mixed up with, or an image they choose, "
+                    "and have them use it in the speaking block." if struggling else "No word is struggling.")),
+        }
 
     def _anki_words(self) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
         """Today's batch of queued words, and all words waiting."""
@@ -1524,7 +1587,9 @@ class Engine:
                 "recent_misses": [f"{self._display(r)} = {r['gloss']} ({r['facets']})" for r in recent],
                 "anki_queue": self.conn.execute(
                     "SELECT COUNT(*) FROM words WHERE anki_queued_at IS NOT NULL AND anki_exported_at IS NULL"
-                ).fetchone()[0]}
+                ).fetchone()[0],
+                "anki_struggling": [self._display(r) for r in self.conn.execute(
+                    "SELECT * FROM words WHERE anki_lapses >= ? ORDER BY anki_lapses DESC", (ANKI_STRUGGLING_LAPSES,))]}
 
     def _last_speaking_phrases(self, session_id: int) -> list[str]:
         """Expressions given in the last earlier session's speaking plan, to need again in a new situation."""
@@ -1676,6 +1741,7 @@ class Engine:
             block.update(title="Reviews", constructs=due, instructions=(
                 "Anki first, ideally in the morning, since sleep after learning helps new words stick: words with "
                 "their gender, and spoken chunks answered aloud within about two seconds. "
+                + ("After the reviews, call sync_anki: it reads how the cards are going. " if self.anki else "")
                 + ("Then two recall prompts for each due construct, from the learner's own sentences. " if due else "")
                 + ("Then a gender drill: call gender_drill and follow it (article, noun and plural, checked "
                    "against the noun lexicon). " if self._has_lexicon() else "")

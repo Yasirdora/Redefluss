@@ -20,6 +20,8 @@ Your learner database (profile, answers, mistakes, transcripts of your speech, s
 
 The lessons themselves happen in an AI app. What you say and write in a lesson, and what the engine's tools return to the model, is sent to that app's provider and handled under its terms. Don't share anything in a lesson that you wouldn't share with them.
 
+The optional add-ons stay on your computer: the Anki link talks only to Anki on this machine (AnkiConnect at 127.0.0.1), and the noun lexicon and frequency list are files you load locally.
+
 ## Third-party material
 
 Textbooks, their answer keys and their audio are copyrighted. Keep your own extractions in `data/book/`, which is git-ignored, and don't publish them. Data you download for the tool, such as a frequency list, keeps its own licence (see the README).

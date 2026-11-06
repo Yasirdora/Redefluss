@@ -6,6 +6,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from german_tutor.anki import AnkiError
 from german_tutor.db import connect
 from german_tutor.engine import FIRST_QUESTIONS, LATER_QUESTIONS, Engine, TutorError
 
@@ -1083,6 +1084,88 @@ class GenderDrillTest(EngineTest):
         self.new_session()
         review = next(b for b in iter(lambda: self.engine.next_activity(self.session), None) if b["type"] == "review")
         self.assertNotIn("gender_drill", review["instructions"])
+
+
+class FakeAnki:
+    """Stands in for AnkiConnect: keeps notes in memory, with the review record a test sets."""
+    deck = "Redefluss"
+
+    def __init__(self, reachable=True):
+        self.reachable, self.notes, self.stats = reachable, {}, {}
+
+    def add_notes(self, model, notes):
+        if not self.reachable:
+            raise AnkiError("Anki isn't reachable.")
+        ids = []
+        for front, back, tags in notes:
+            if any(n[1] == front for n in self.notes.values()):
+                ids.append(None)
+                continue
+            ids.append(len(self.notes) + 1001)
+            self.notes[ids[-1]] = (model, front, back, tags)
+        return ids
+
+    def card_stats(self, note_ids):
+        if not self.reachable:
+            raise AnkiError("Anki isn't reachable.")
+        return {n: self.stats.get(n, {"interval": 1, "lapses": 0}) for n in note_ids if n in self.notes}
+
+
+class AnkiLinkTest(EngineTest):
+    """With AnkiConnect, cards go straight into the deck and Anki's record comes back."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.anki = FakeAnki()
+        self.engine.set_frequency(["termin", "firma"])
+        for lemma, article, gloss in (("Termin", "der", "appointment"), ("Firma", "die", "company")):
+            self.engine.log_word(self.session, lemma, "meaning", False, pos="noun", article=article, gloss=gloss)
+
+    def test_cards_go_straight_into_the_deck(self):
+        self.log(correct=False, sentence="Deswegen ich fahre nach Berlin.", correction="Deswegen fahre ich nach Berlin.")
+        result = self.engine.export_anki()
+        self.assertEqual((result["exported"], result["sentence_cards"], result["added_to_anki"]), (2, 1, 3))
+        self.assertNotIn("file", result)
+        self.assertIn("nothing to import", result["instructions"])
+        models = sorted(model for model, *_ in self.engine.anki.notes.values())
+        self.assertEqual(models, ["Redefluss sentence", "Redefluss word", "Redefluss word"])
+        self.assertEqual(self.engine.conn.execute("SELECT COUNT(*) FROM words WHERE anki_note_id IS NOT NULL"
+                                                  ).fetchone()[0], 2)
+
+    def test_files_when_anki_is_closed(self):
+        self.engine.anki.reachable = False
+        with tempfile.TemporaryDirectory() as tmp:
+            self.engine.export_dir = Path(tmp)
+            result = self.engine.export_anki()
+            self.assertIn("isn't reachable", result["anki_error"])
+            self.assertTrue(Path(result["file"]).exists())
+        self.assertEqual(self.engine.sync_anki()["linked"], False)
+
+    def test_anki_record_settles_words_and_flags_struggling_ones(self):
+        self.engine.export_anki()
+        termin, firma = sorted(self.engine.anki.notes)
+        self.engine.anki.stats = {termin: {"interval": 30, "lapses": 0}, firma: {"interval": 2, "lapses": 5}}
+        synced = self.engine.sync_anki()
+        self.assertEqual((synced["words_read"], synced["settled"]), (2, 1))
+        self.assertEqual(synced["struggling"], ["die Firma = company (5 lapses)"])
+        self.assertEqual(self.engine.learner_summary()["words"]["anki_struggling"], ["die Firma"])
+        self.new_session()
+        check = self.engine.word_check(self.session, [
+            {"lemma": "Termin", "pos": "noun", "article": "der", "gloss": "appointment", "needed": True},
+            {"lemma": "Firma", "pos": "noun", "article": "die", "gloss": "company", "needed": True},
+            {"lemma": "Akte", "pos": "noun", "article": "die", "gloss": "file", "needed": True},
+            {"lemma": "Frist", "pos": "noun", "article": "die", "gloss": "deadline", "needed": True}])
+        self.assertEqual(check["already_known"], ["der Termin"])
+
+    def test_the_review_block_reads_anki_only_with_the_link(self):
+        self.new_session()  # planned with the link
+        review = next(b for b in iter(lambda: self.engine.next_activity(self.session), None) if b["type"] == "review")
+        self.assertIn("sync_anki", review["instructions"])
+        self.engine.anki = None
+        self.new_session()
+        review = next(b for b in iter(lambda: self.engine.next_activity(self.session), None) if b["type"] == "review")
+        self.assertNotIn("sync_anki", review["instructions"])
+        self.assertEqual(self.engine.sync_anki()["linked"], False)
 
 
 class MigrationTest(unittest.TestCase):

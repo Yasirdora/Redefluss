@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS errors (
     correction   TEXT,
     cause        TEXT,                  -- hypothesis; for listening and reading misses, one of a fixed set
     pattern_id   INTEGER REFERENCES patterns(id),
-    anki_exported_at TEXT               -- when it went to Anki as a sentence card
+    anki_exported_at TEXT,              -- when it went to Anki as a sentence card
+    anki_note_id     INTEGER            -- its note in Anki, when added through AnkiConnect
 );
 CREATE TABLE IF NOT EXISTS words (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,6 +102,10 @@ CREATE TABLE IF NOT EXISTS words (
     added_at         TEXT NOT NULL,
     anki_queued_at   TEXT,
     anki_exported_at TEXT,
+    anki_note_id     INTEGER,           -- its note in Anki, when added through AnkiConnect
+    anki_interval    INTEGER,           -- from Anki (sync_anki): the longest interval of its cards, in days
+    anki_lapses      INTEGER,           -- from Anki: times its cards were forgotten
+    anki_checked_at  TEXT,
     UNIQUE (lemma, pos)
 );
 CREATE TABLE IF NOT EXISTS word_evidence (
@@ -171,6 +176,11 @@ ADDED_COLUMNS = [
     ("errors", "pattern_id", "INTEGER REFERENCES patterns(id)"),
     ("attempts", "reason", "TEXT"),
     ("errors", "anki_exported_at", "TEXT"),
+    ("errors", "anki_note_id", "INTEGER"),
+    ("words", "anki_note_id", "INTEGER"),
+    ("words", "anki_interval", "INTEGER"),
+    ("words", "anki_lapses", "INTEGER"),
+    ("words", "anki_checked_at", "TEXT"),
 ]
 
 

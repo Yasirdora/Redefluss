@@ -48,6 +48,10 @@ curl -L -o data/frequency/de_50k.txt https://raw.githubusercontent.com/hermitdav
 python3 scripts/import_frequency.py data/frequency/de_50k.txt
 ```
 
+### Optional: the Anki link
+
+With Anki open and the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on installed, `export_anki` adds the day's new cards straight to a deck called Redefluss, with two note types it creates (Redefluss word, Redefluss sentence), and `sync_anki` reads back how those cards are going. Without it, or while Anki is closed, cards go out as files to import. AnkiConnect listens on this computer only (127.0.0.1:8765), and the engine refuses any other address. Set `GERMAN_TUTOR_ANKI=off` to turn the link off, or `GERMAN_TUTOR_ANKI_URL` for another local port.
+
 ### Optional: a noun lexicon
 
 With a noun lexicon, the gender drill (`gender_drill`) checks the learner's article and plural against a dictionary instead of the tutor model's memory, and a wrong stored article gets corrected. Without one, there is no gender drill. The lexicon from [gambolputty/german-nouns](https://github.com/gambolputty/german-nouns) (CC BY-SA 4.0, built from Wiktionary, about 20 MB) has about 100,000 nouns:
@@ -93,7 +97,8 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
 | `log_word` | One observation about a word: meaning asked about, missed in audio, wrong article, or used without help |
 | `gender_drill` | Nouns from the learner's word list whose gender isn't settled, for the learner to say with article and plural; needs the noun lexicon |
 | `answer_gender_drill` | Scores the answers against the lexicon: the article as gender evidence for the word, the plural as a `noun_plural` answer with the noun as trigger |
-| `export_anki` | Writes today's new Anki cards to tab-separated files to import: words (at most 5 new a day) and sentence cards from the learner's own corrected errors (at most 5) |
+| `export_anki` | Sends today's new Anki cards, words (at most 5 new a day) and sentence cards from the learner's own corrected errors (at most 5): straight into the deck with the Anki link, otherwise as tab-separated files to import |
+| `sync_anki` | Reads how the cards it added are going in Anki: interval and lapses |
 | `human_brief` | A brief for the weekly human lesson: what to listen for, what to steer towards, stored speech to rate blind, the tutor's latest corrections to audit, and a sentence-repetition test when one is due |
 | `speak` | Reads German aloud with macOS `say`, for drills where the content matters more than the voice, such as numbers and times |
 
@@ -126,6 +131,7 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
   - With a noun lexicon loaded, the review block has a gender drill: the learner says article, noun and plural (der Termin, die Termine) for their own nouns whose gender isn't known, missed ones first. The lexicon scores it, so the model's memory of der, die or das never decides. Nouns with two genders (der or das Joghurt) accept both.
   - It tests words the task needs, however rare: needed common words first, then the other needed words, then common words the task doesn't need (within the top 10,000 of the frequency list). Other words are only glossed. A subtitle list ranks work words like Bewerbung low, so marking a word as needed is what counts.
   - At most 2 missed words are taught on the spot; the rest are glossed. A missed word goes to Anki if the task needed it, it is common, or it was missed on 2 days, with at most 5 new cards a day. Anki keeps the review schedule.
+  - With the Anki link, Anki's record counts: a word whose cards reach a 21-day interval is settled and leaves word checks, and a word forgotten 4 times or more is flagged to be taught another way.
   - Errors become Anki cards too, at most 5 a day: the learner's own sentence, corrected, with the changed words gapped and their words as the hint (`Deswegen ___ nach Berlin. (ich / fahre)`). One card per open pattern, and none for a rewritten sentence.
   - No word check before listening or exam-format practice: a topic preview comes before listening, and unknown words are collected afterwards.
 - **The day:** review 20, book lesson 30, speaking 50, input 40, focus drills 20, a real conversation away from the desk 15, close 5 minutes, scaled to the session length.
@@ -158,7 +164,6 @@ tests/          engine and MCP protocol tests, with an invented book unit in fix
 
 ## Not built yet
 
-- Reading Anki's review history (read-only), so a word Anki has settled isn't checked again.
 - `check_german`: LanguageTool plus verb-position rules, as a second judge for typed free use.
 - The speech pipeline: speech recognition, fluency metrics and pronunciation scoring. The learner's own transcript of their recording comes first.
 - An independent examiner model, used only once 20 or more stored samples have human ratings, with its agreement with the human reported.

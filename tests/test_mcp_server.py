@@ -18,7 +18,8 @@ class McpServerTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        env = {**os.environ, "GERMAN_TUTOR_DB": str(Path(self.tmp.name) / "test.db")}
+        # The Anki link stays off, so a test never adds cards to a real Anki on this computer.
+        env = {**os.environ, "GERMAN_TUTOR_DB": str(Path(self.tmp.name) / "test.db"), "GERMAN_TUTOR_ANKI": "off"}
         self.proc = subprocess.Popen([sys.executable, str(SERVER)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, text=True, env=env)
         self.next_id = 0
@@ -59,7 +60,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(names, {"learner_summary", "start_session", "next_activity", "log_attempt",
                                  "close_session", "get_lesson", "log_measure", "log_sample", "set_unit_status",
                                  "word_check", "answer_word_check", "show_words", "log_word", "gender_drill",
-                                 "answer_gender_drill", "export_anki",
+                                 "answer_gender_drill", "export_anki", "sync_anki",
                                  "human_brief", "save_profile", "speak"})
 
     def test_unknown_protocol_version_gets_the_latest(self):

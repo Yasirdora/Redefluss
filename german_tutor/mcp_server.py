@@ -12,7 +12,7 @@ import subprocess
 import sys
 import traceback
 
-from . import __version__, catalog, exams
+from . import __version__, anki, catalog, exams
 from .engine import (ARTICLES, CANDIDATES_MAX, CHANNELS, CONTEXTS, REASONS, REPAIRS, SAMPLE_KINDS, WORD_FACETS, WORD_POS,
                      Engine, TutorError)
 
@@ -284,8 +284,11 @@ TOOLS = [
                                       "'der Termin, die Termine', 'die Firma, kein Plural' or 'weiß nicht'."},
            "channel": {"type": "string", "enum": ["typed", "spoken"]}},
           ["drill_id", "answers"]),
-    _tool("export_anki", "Write today's new Anki cards to files the learner imports: words (at most 5 new a day) "
-                         "and sentence cards from their own corrected errors (at most 5)."),
+    _tool("export_anki", "Send today's new Anki cards: words (at most 5 new a day) and sentence cards from the "
+                         "learner's own corrected errors (at most 5). They go straight into the deck when Anki is "
+                         "open with AnkiConnect, otherwise into files the learner imports."),
+    _tool("sync_anki", "Read how the learner's word cards are going in Anki (interval and lapses), through "
+                       "AnkiConnect: settled words leave word checks, struggling ones need teaching another way."),
     _tool("human_brief", "A brief for the weekly lesson with a human tutor: the format, the mistakes to listen "
                          "for, the structures to steer towards, stored speech to rate blind, your recent "
                          "corrections to audit, and a sentence-repetition test when one is due. Give it to the "
@@ -384,7 +387,7 @@ def serve(engine: Engine, stdin=sys.stdin, stdout=sys.stdout) -> None:
 
 
 def main() -> None:
-    engine = Engine()
+    engine = Engine(anki=anki.from_environment())
     engine.bootstrap()
     serve(engine)
 
