@@ -1065,6 +1065,18 @@ class GenderDrillTest(EngineTest):
         ).fetchone()[0]
         self.assertEqual(evidence, 4)
 
+    def test_every_accepted_form_is_shown_with_a_note_when_there_are_several(self):
+        result = self.drill(Termin="der Termin, die Termine", Firma="die Firma, die Firmen",
+                            Joghurt="der Joghurt, die Joghurt", Obst="das Obst")
+        by_lemma = {r["noun"].split(",")[0].split()[-1]: r for r in result["results"]}
+        self.assertEqual(by_lemma["Joghurt"]["noun"], "der/das Joghurt, die Joghurts / Joghurt")
+        self.assertEqual(by_lemma["Joghurt"]["plural"], "right")
+        self.assertIn("'yoghurt'", by_lemma["Joghurt"]["note"])
+        self.assertNotIn("note", by_lemma["Termin"])
+        expected = self.engine.conn.execute(
+            "SELECT expected FROM attempts WHERE construct_id = 'noun_plural' AND trigger = 'joghurt'").fetchone()[0]
+        self.assertEqual(expected, "Joghurts / Joghurt")
+
     def test_a_wrong_or_unknown_article_is_a_miss_and_goes_to_anki(self):
         result = self.drill(Termin="die Termin, die Termine", Firma="weiß nicht", Joghurt="der Joghurt, Joghurts",
                             Obst="das Obst")

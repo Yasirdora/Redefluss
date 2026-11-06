@@ -4,6 +4,10 @@
 
 **The model teaches, code keeps score, tools verify.** Any chat app that speaks the Model Context Protocol (MCP) can be the tutor: Claude Desktop, Claude Code, ChatGPT developer mode, Gemini CLI, Google Antigravity and others. The engine decides what to practise and keeps an honest record of what happened, so the tutor can't flatter you or forget your mistakes.
 
+![How Redefluss fits together: book pages feed a curriculum store and intake feeds the learner model; the planner turns both into today's plan for the tutor, which works with you, checks answers with LanguageTool, a noun lexicon and a verb-position check, and logs every attempt. Two-pass ingestion, an examiner and a speech pipeline are planned.](docs/architecture.svg)
+
+*Dashed parts are planned and not built yet. Until then, textbook units go into `data/book/` as JSON (see [your textbook](#optional-your-textbook)), and Anki schedules the word cards.*
+
 It runs on the stock macOS Python 3.9, uses only the standard library and has no dependencies. Your learner record stays in one SQLite file on your computer; the lessons themselves go through the AI app you connect, and so to its provider.
 
 > **Disclaimer.** Redefluss is unofficial and experimental, and not affiliated with the Goethe-Institut, telc, the BAMF or any other exam provider. AI feedback can be wrong, its marks are estimates, and nothing here guarantees an exam result. See [DISCLAIMER.md](DISCLAIMER.md).
@@ -168,12 +172,15 @@ data/nouns/     an optional noun lexicon (git-ignored)
 data/private/   tutor.db, Anki exports (git-ignored)
 scripts/        init_db.py, import_frequency.py, import_nouns.py, export_rules.py
 tests/          engine, MCP protocol, Anki link and checker tests, with an invented book unit and a few lexicon rows in fixtures/
+docs/           architecture.svg, the diagram at the top
+LICENSE         MIT
 ```
 
 `scripts/init_db.py` sets up a database by hand: it loads the catalog and book units, a profile from `data/private/profile.json` if there is one (see `data/profile.example.json`), and past sessions saved as JSON. You don't need it for a normal start: the server does the same on its own, and the interview replaces the profile file.
 
 ## Not built yet
 
+- Book ingestion that extracts each page twice, independently, and diffs the two, so you only confirm where they disagree. Today a unit is extracted once.
 - The speech pipeline: speech recognition, fluency metrics and pronunciation scoring. The learner's own transcript of their recording comes first.
 - An independent examiner model, used only once 20 or more stored samples have human ratings, with its agreement with the human reported.
 
@@ -182,3 +189,7 @@ The MCP layer is written without the SDK because the SDK needs Python 3.10 or ne
 ## Third-party data
 
 The sentence-repetition forms in `data/measures/` and the test fixtures in `tests/fixtures/` are original. Data you load yourself, such as a frequency list, a noun lexicon or a textbook, keeps its own licence and stays out of the repository.
+
+## License
+
+Redefluss is released under the [MIT License](LICENSE): the code, the exam format files, the sentence-repetition forms and the test fixtures. It doesn't cover the data you load yourself, which keeps its own licence: the frequency list and the noun lexicon are CC BY-SA 4.0, and textbooks belong to their publishers.

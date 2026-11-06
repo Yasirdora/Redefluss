@@ -30,6 +30,12 @@ guess. On reading and listening items the quoted words are the skill, and a righ
 is a guess. The quote rule fades to exam format in the last three weeks. The interview asks seven
 questions first and the rest over the first sessions.
 
+And (0.7.0), after research on exam preparation and spaced practice: the learner's exam (Goethe, telc or DTB
+B2) is read from their own words and drives gates, mock parts and exam-format practice. Timed exam writing
+comes twice a week. Listening ends by ear, with unfamiliar speakers weekly. Retests are spaced at 1, 4 and 10
+days. Corrected errors become Anki sentence cards. A gender drill is checked against a noun lexicon. Cards go
+to Anki through AnkiConnect, which also reports back. check_text is a veto-only second judge for typed text.
+
 Every public method returns plain dicts. Refusals raise TutorError with how to fix them.
 """
 from __future__ import annotations
@@ -1098,10 +1104,17 @@ class Engine:
                 correct = article in articles
                 self._add_evidence(word["id"], session_id, now, "gender", correct, word["id"] in seen,
                                    "code:lexicon", answer)
-                right = f"{'/'.join(articles)} {word['lemma']}" + (f", die {plurals[0]}" if plurals else "")
+                # Every accepted form is shown: a lemma can stand for nouns with different meanings (das Gehalt,
+                # die Gehälter: salary; der Gehalt, die Gehalte: content), and showing one would teach the wrong
+                # form half the time.
+                right = f"{'/'.join(articles)} {word['lemma']}" + (f", die {' / '.join(plurals)}" if plurals else "")
                 result = {"noun": right, "answer": answer,
                           "article": "right" if correct else "didn't know" if article is None else "wrong",
                           "plural": "not scored: the lexicon lists none"}
+                if len(articles) > 1 or len(plurals) > 1:
+                    meaning = f"'{word['gloss']}'" if word["gloss"] else "the meaning the learner met"
+                    result["note"] = (f"The lexicon gives more than one form, which may belong to different "
+                                      f"meanings: say which goes with {meaning}.")
                 if plurals:
                     plural_right = plural is not None and plural.lower() in (p.lower() for p in plurals)
                     result["plural"] = "right" if plural_right else "didn't know" if plural is None else "wrong"
@@ -1114,7 +1127,8 @@ class Engine:
         for word, plural, plurals, plural_right, answer, right in plural_answers:
             logged = self.log_attempt(session_id, "noun_plural", "controlled", plural_right, channel=channel,
                                       trigger=word["lemma"], item=word["lemma"], answer=plural or DONT_KNOW,
-                                      expected=plurals[0], sentence=answer, correction=right, scorer="code:lexicon")
+                                      expected=" / ".join(plurals), sentence=answer, correction=right,
+                                      scorer="code:lexicon")
         again = [r["noun"] for r in results if r["article"] != "right" or r["plural"] in ("wrong", "didn't know")]
         return {
             "right": f"{sum(r['article'] == 'right' for r in results)} of {len(results)} articles, "
@@ -1125,6 +1139,7 @@ class Engine:
             "say_again": again,
             "instructions": "Show the results as one short list. For each noun in `say_again`, the learner says "
                             "the right form once, then uses it with its article in a short sentence of their own. "
+                            "Where a result has a note, tell the learner which form fits the meaning they learned. "
                             "The answers are already logged: don't log them again.",
             **({"signals": logged["signals"]} if "signals" in logged else {}),
         }
