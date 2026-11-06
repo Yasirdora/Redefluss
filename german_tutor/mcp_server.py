@@ -12,7 +12,7 @@ import subprocess
 import sys
 import traceback
 
-from . import __version__, anki, catalog, exams
+from . import __version__, anki, catalog, checker, exams
 from .engine import (ARTICLES, CANDIDATES_MAX, CHANNELS, CONTEXTS, REASONS, REPAIRS, SAMPLE_KINDS, WORD_FACETS, WORD_POS,
                      Engine, TutorError)
 
@@ -38,6 +38,7 @@ is correct=false with repair='self'; fixed after your prompt, repair='prompted'.
 actually happened: typed, spoken (a recording or its transcript), or listening. When you are not
 sure the learner got it right (a typo or a slip of the tongue, say), send certain=false and say so.
 Your own scoring never awards free use (level 4) on its own; a human or a checker has to confirm it.
+check_text is not such a checker: it can point at errors in typed text, never confirm a right answer.
 An answer is free only if the target form did not appear in your own turns just before it (a model,
 the question, the role-play setup); otherwise log it as controlled. Verdicts are final: if the learner
 disputes one, check it, and log a correction as a new answer rather than changing your mind to please.
@@ -270,6 +271,10 @@ TOOLS = [
            "answer": {"type": "string", "description": "What the learner said or wrote, e.g. 'der Tür'."},
            "example": {"type": "string"}},
           ("session_id", "lemma", "facet", "correct")),
+    _tool("check_text", "A second judge for a text the learner typed: a verb-position check (verb second, verb "
+                        "last in weil/dass clauses) and LanguageTool if a server runs on this computer. Findings "
+                        "are leads to check; a clean result proves nothing.",
+          {"text": {"type": "string", "description": "The learner's text exactly as typed."}}, ["text"]),
     _tool("gender_drill", "Nouns from the learner's word list whose gender isn't known yet, for them to say with "
                           "article and plural (der Termin, die Termine). Needs the noun lexicon "
                           "(scripts/import_nouns.py).",
@@ -387,7 +392,7 @@ def serve(engine: Engine, stdin=sys.stdin, stdout=sys.stdout) -> None:
 
 
 def main() -> None:
-    engine = Engine(anki=anki.from_environment())
+    engine = Engine(anki=anki.from_environment(), languagetool=checker.from_environment())
     engine.bootstrap()
     serve(engine)
 

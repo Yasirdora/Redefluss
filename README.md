@@ -52,6 +52,10 @@ python3 scripts/import_frequency.py data/frequency/de_50k.txt
 
 With Anki open and the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on installed, `export_anki` adds the day's new cards straight to a deck called Redefluss, with two note types it creates (Redefluss word, Redefluss sentence), and `sync_anki` reads back how those cards are going. Without it, or while Anki is closed, cards go out as files to import. AnkiConnect listens on this computer only (127.0.0.1:8765), and the engine refuses any other address. Set `GERMAN_TUTOR_ANKI=off` to turn the link off, or `GERMAN_TUTOR_ANKI_URL` for another local port.
 
+### Optional: LanguageTool
+
+`check_text` always runs its verb-position check. With a [LanguageTool](https://dev.languagetool.org/http-server) server running on this computer (port 8081 by default, or `GERMAN_TUTOR_LANGUAGETOOL_URL`), it adds LanguageTool's grammar and spelling findings. The engine never uses the public LanguageTool service, so the learner's text stays on this computer. `GERMAN_TUTOR_LANGUAGETOOL=off` turns it off.
+
 ### Optional: a noun lexicon
 
 With a noun lexicon, the gender drill (`gender_drill`) checks the learner's article and plural against a dictionary instead of the tutor model's memory, and a wrong stored article gets corrected. Without one, there is no gender drill. The lexicon from [gambolputty/german-nouns](https://github.com/gambolputty/german-nouns) (CC BY-SA 4.0, built from Wiktionary, about 20 MB) has about 100,000 nouns:
@@ -95,6 +99,7 @@ Units of the textbook you work through go in `data/book/`, one JSON file per uni
 | `answer_word_check` | Scores the learner's letters, records the evidence, and says which words to teach and which to gloss |
 | `show_words` | Records words given to the learner, such as in a planning step, so using them that day doesn't count |
 | `log_word` | One observation about a word: meaning asked about, missed in audio, wrong article, or used without help |
+| `check_text` | A second judge for typed text: verb second and verb last (weil, dass) by rule, plus LanguageTool when a local server runs. Findings are leads to check; a clean result proves nothing |
 | `gender_drill` | Nouns from the learner's word list whose gender isn't settled, for the learner to say with article and plural; needs the noun lexicon |
 | `answer_gender_drill` | Scores the answers against the lexicon: the article as gender evidence for the word, the plural as a `noun_plural` answer with the noun as trigger |
 | `export_anki` | Sends today's new Anki cards, words (at most 5 new a day) and sentence cards from the learner's own corrected errors (at most 5): straight into the deck with the Anki link, otherwise as tab-separated files to import |
@@ -164,7 +169,6 @@ tests/          engine and MCP protocol tests, with an invented book unit in fix
 
 ## Not built yet
 
-- `check_german`: LanguageTool plus verb-position rules, as a second judge for typed free use.
 - The speech pipeline: speech recognition, fluency metrics and pronunciation scoring. The learner's own transcript of their recording comes first.
 - An independent examiner model, used only once 20 or more stored samples have human ratings, with its agreement with the human reported.
 

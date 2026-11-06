@@ -45,6 +45,7 @@ from typing import Callable
 
 from . import __version__, catalog, exams
 from .anki import SENTENCE_MODEL, WORD_MODEL, AnkiConnect, AnkiError
+from .checker import CheckerError, LanguageTool, verb_position
 from .db import connect, db_path
 
 BOOK_DIR = Path(__file__).resolve().parent.parent / "data" / "book"
@@ -169,6 +170,7 @@ GENDER_DRILL_SIZE = 8
 # With the Anki link (AnkiConnect), Anki's own record counts: a word whose cards have reached an interval of
 # three weeks is settled and not checked again, and one forgotten 4 times needs teaching another way.
 ANKI_SETTLED_DAYS = 21
+CHECK_TEXT_MAX = 5000  # characters; about two exam texts
 ANKI_STRUGGLING_LAPSES = 4
 # Sentence cards from the learner's own corrected errors [J], on top of the new words: the corrected sentence
 # with the changed words gapped and the learner's own words as the hint. One card per open pattern, and only
@@ -230,11 +232,13 @@ class TutorError(ValueError):
 
 class Engine:
     def __init__(self, db: str | Path | None = None, clock: Callable[[], datetime] = datetime.now,
-                 export_dir: str | Path | None = None, anki: AnkiConnect | None = None):
+                 export_dir: str | Path | None = None, anki: AnkiConnect | None = None,
+                 languagetool: LanguageTool | None = None):
         path = db_path(db)
         self.conn = connect(path)
         self.clock = clock
         self.anki = anki  # the optional link to Anki; without it, cards go out as files
+        self.languagetool = languagetool  # an optional LanguageTool server on this computer, for check_text
         # Anki files go next to the database unless told otherwise; an in-memory database has no folder.
         self.export_dir = Path(export_dir) if export_dir else (
             None if path == ":memory:" else Path(path).parent / "anki")
@@ -1009,6 +1013,28 @@ class Engine:
                   "queued_for_anki": queued}
         if primed:
             result["note"] = "This word was shown or corrected earlier in the session, so this doesn't count yet."
+        return result
+
+    def check_text(self, text: str) -> dict:
+        """A second judge for a text the learner typed: the verb-position check, and LanguageTool when a server
+        runs on this computer. Findings are leads for the tutor to check; a clean result proves nothing."""
+        text = text.strip()
+        if not text:
+            raise TutorError("Send the learner's text exactly as they typed it.")
+        if len(text) > CHECK_TEXT_MAX:
+            raise TutorError(f"The text is over {CHECK_TEXT_MAX} characters: check it in parts.")
+        result: dict = {"verb_position": verb_position(text)}
+        if self.languagetool is None:
+            result["languagetool"] = "off (GERMAN_TUTOR_LANGUAGETOOL=off)"
+        else:
+            try:
+                result["languagetool"] = self.languagetool.check(text)
+            except CheckerError as e:
+                result["languagetool"] = f"not running: {e} The verb-position check ran on its own."
+        result["instructions"] = (
+            "These are leads, not verdicts. Check each one yourself and log it with log_attempt only if it really "
+            "is an error, under the construct and trigger given for verb position. A typo is not a grammar error. "
+            "A clean result proves nothing: never log an answer as right, free or confirmed because of it.")
         return result
 
     def gender_drill(self, session_id: int, count: int = GENDER_DRILL_SIZE) -> dict:
@@ -1896,7 +1922,8 @@ class Engine:
                 f"{task['minutes']} minutes of writing as in the exam: no help, no dictionary, no translator. Store "
                 "the text with log_sample('writing') before any feedback. Then go through it in this order. "
                 "Content first: the learner shows where each content point is covered. " + exam["writing_rule"]
-                + " Then the language: log each word-order and form error with log_attempt (context free, channel "
+                + " Then the language: run check_text on the text first, as leads for you to check, not as "
+                "verdicts. Log each word-order and form error with log_attempt (context free, channel "
                 "typed, with its trigger) and each correct use of these constructs, work on at most two errors "
                 "with prompts, and have the learner rewrite one paragraph. Last, estimate the score by the exam's "
                 f"criteria ({task['criteria']}) and log it with log_measure('writing_task', score, {points}, "
